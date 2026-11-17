@@ -140,11 +140,15 @@ declare module "messier/engine/mesh" {
 declare module "messier/engine/material" {
     import type { Vec3, Vec4 } from "messier/engine/math";
     import type { ResourceRef } from "messier/engine/mesh";
-    /** An image that will be uploaded as an sRGB texture with a full mip chain. */
+    /**
+     * An image uploaded with a full mip chain: as an sRGB texture for colors (base color, emissive), and as a linear one
+     * for data (normals, metallic-roughness, occlusion). Each copy is made the first time a slot of that kind uses it.
+     */
     export class Texture {
         readonly source: ImageBitmap;
         readonly name: string;
         gpu: GPUTexture | null;
+        gpuLinear: GPUTexture | null;
         /** Source of the image (set when its asset is tagged), or null when it can't be saved. */
         ref: ResourceRef | null;
         constructor(source: ImageBitmap, name?: string);
@@ -154,10 +158,16 @@ declare module "messier/engine/material" {
     export interface MaterialGPU {
         uniformBuffer: GPUBuffer;
         bindGroup: GPUBindGroup;
-        boundTexture: Texture | null;
+        /** The textures `bindGroup` was made with, in TEXTURE_SLOTS order. */
+        boundTextures: (Texture | null)[];
     }
-    /** Fields saved with a scene (the texture is saved separately, as a ref). Keep in sync with clone(). */
-    export const MATERIAL_FIELDS: readonly ["name", "baseColor", "metallic", "roughness", "emissive", "emissiveStrength", "alphaCutoff", "doubleSided", "unlit"];
+    /** A material's texture fields, in bind-group order. */
+    export const TEXTURE_SLOTS: readonly ["baseColorTexture", "normalTexture", "metallicRoughnessTexture", "occlusionTexture", "emissiveTexture"];
+    export type TextureSlot = (typeof TEXTURE_SLOTS)[number];
+    /** Slots whose textures hold data rather than colors, so they're sampled without sRGB decoding. */
+    export const LINEAR_TEXTURE_SLOTS: ReadonlySet<TextureSlot>;
+    /** Fields saved with a scene (textures are saved separately, as refs). Keep in sync with clone(). */
+    export const MATERIAL_FIELDS: readonly ["name", "baseColor", "metallic", "roughness", "emissive", "emissiveStrength", "normalScale", "occlusionStrength", "alphaCutoff", "doubleSided", "unlit"];
     /** Metallic-roughness PBR material (glTF 2.0 compatible subset). All colors are linear. */
     export class Material {
         name: string;
@@ -166,7 +176,20 @@ declare module "messier/engine/material" {
         roughness: number;
         emissive: Vec3;
         emissiveStrength: number;
+        /** Multiplies baseColor (sRGB, alpha included). */
         baseColorTexture: Texture | null;
+        /** Tangent-space normal map (glTF convention: +Y up in the image). Tangents come from the UVs per pixel. */
+        normalTexture: Texture | null;
+        /** Scales the normal map's X and Y. */
+        normalScale: number;
+        /** Linear: G is roughness and B is metallic (glTF packing), multiplying the factors. */
+        metallicRoughnessTexture: Texture | null;
+        /** Linear: R is ambient occlusion. Often the same image as metallicRoughnessTexture (ORM). */
+        occlusionTexture: Texture | null;
+        /** How much the occlusion texture darkens ambient light (0 = none, 1 = fully). */
+        occlusionStrength: number;
+        /** Multiplies emissive × emissiveStrength (sRGB). */
+        emissiveTexture: Texture | null;
         /** Fragments with alpha below this are discarded. 0 disables alpha testing. */
         alphaCutoff: number;
         doubleSided: boolean;
@@ -1880,7 +1903,7 @@ declare module "messier/engine/renderer" {
         private readonly gridPipeline;
         private readonly overlayDepthPipeline;
         private readonly overlayTopPipeline;
-        private readonly mipPipeline;
+        private readonly mipPipelines;
         private readonly skyPipeline;
         private readonly world2DPipeline;
         private readonly screen2DPipeline;
@@ -1924,6 +1947,7 @@ declare module "messier/engine/renderer" {
         private makeFrameBindGroup;
         private resizeIfNeeded;
         private ensureMesh;
+        /** Uploads `tex` as sRGB colors, or with `linear` as raw data (each copy filters its mips in its own space). */
         private ensureTexture;
         private generateMips;
         private prepareMaterial;

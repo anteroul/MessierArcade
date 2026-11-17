@@ -140,6 +140,8 @@
               0
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": false
@@ -187,6 +189,8 @@
               0
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": false
@@ -234,6 +238,8 @@
               0.17
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": true
@@ -281,6 +287,8 @@
               0.17
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": true
@@ -328,6 +336,8 @@
               0.17
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": true
@@ -375,6 +385,8 @@
               0.17
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": true
@@ -422,6 +434,8 @@
               0.17
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": true
@@ -469,6 +483,8 @@
               0.32
             ],
             "emissiveStrength": 1,
+            "normalScale": 1,
+            "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
             "unlit": true
@@ -609,6 +625,8 @@
                   0
                 ],
                 "emissiveStrength": 1,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": false
@@ -659,6 +677,8 @@
                   0.62
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -709,6 +729,8 @@
                   0.62
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -1331,6 +1353,8 @@
                   0.62
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -1997,6 +2021,8 @@
                           0
                         ],
                         "emissiveStrength": 1,
+                        "normalScale": 1,
+                        "occlusionStrength": 1,
                         "alphaCutoff": 0,
                         "doubleSided": false,
                         "unlit": false
@@ -2044,6 +2070,8 @@
                           0
                         ],
                         "emissiveStrength": 1,
+                        "normalScale": 1,
+                        "occlusionStrength": 1,
                         "alphaCutoff": 0,
                         "doubleSided": false,
                         "unlit": false
@@ -2093,6 +2121,8 @@
                           1
                         ],
                         "emissiveStrength": 1.2,
+                        "normalScale": 1,
+                        "occlusionStrength": 1,
                         "alphaCutoff": 0,
                         "doubleSided": false,
                         "unlit": true
@@ -2142,6 +2172,8 @@
                           0.2
                         ],
                         "emissiveStrength": 1.5,
+                        "normalScale": 1,
+                        "occlusionStrength": 1,
                         "alphaCutoff": 0,
                         "doubleSided": false,
                         "unlit": true
@@ -2194,6 +2226,8 @@
                       0.75
                     ],
                     "emissiveStrength": 1.4,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": true
@@ -2244,6 +2278,8 @@
                       1
                     ],
                     "emissiveStrength": 1.4,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": true
@@ -2446,6 +2482,8 @@
                   0
                 ],
                 "emissiveStrength": 1,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": false
@@ -2496,6 +2534,8 @@
                   0.05
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -2546,6 +2586,8 @@
                   0.05
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -3168,6 +3210,8 @@
                   0.05
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -3811,6 +3855,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -3858,6 +3904,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -3905,6 +3953,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -3952,6 +4002,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -4001,6 +4053,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -4050,6 +4104,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -4252,6 +4308,8 @@
                   0
                 ],
                 "emissiveStrength": 1,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": false
@@ -4302,6 +4360,8 @@
                   1
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -4352,6 +4412,8 @@
                   1
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -4974,6 +5036,8 @@
                   1
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -5640,6 +5704,8 @@
                           0
                         ],
                         "emissiveStrength": 1,
+                        "normalScale": 1,
+                        "occlusionStrength": 1,
                         "alphaCutoff": 0,
                         "doubleSided": false,
                         "unlit": false
@@ -5690,6 +5756,8 @@
                           0
                         ],
                         "emissiveStrength": 1,
+                        "normalScale": 1,
+                        "occlusionStrength": 1,
                         "alphaCutoff": 0,
                         "doubleSided": false,
                         "unlit": false
@@ -5741,6 +5809,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -5790,6 +5860,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -5992,6 +6064,8 @@
                   0
                 ],
                 "emissiveStrength": 1,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": false
@@ -6042,6 +6116,8 @@
                   0.35
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -6092,6 +6168,8 @@
                   0.35
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -6714,6 +6792,8 @@
                   0.35
                 ],
                 "emissiveStrength": 0.95,
+                "normalScale": 1,
+                "occlusionStrength": 1,
                 "alphaCutoff": 0,
                 "doubleSided": false,
                 "unlit": true
@@ -7359,6 +7439,8 @@
                       0.25
                     ],
                     "emissiveStrength": 0.35,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -7408,6 +7490,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -7457,6 +7541,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
@@ -7506,6 +7592,8 @@
                       0
                     ],
                     "emissiveStrength": 1,
+                    "normalScale": 1,
+                    "occlusionStrength": 1,
                     "alphaCutoff": 0,
                     "doubleSided": false,
                     "unlit": false
