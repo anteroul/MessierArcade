@@ -1,4 +1,4 @@
-# messier-arcade
+# Messier Arcade
 
 Demo game built with [Messier Engine](https://github.com/anteroul/messier-engine), a WebGPU game engine and editor
 that runs in the browser. It contains four simple minigames, picked from an arcade menu, plus the editor's showcase
