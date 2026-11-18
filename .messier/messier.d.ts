@@ -2195,11 +2195,83 @@ declare module "messier/engine/frameGraph" {
         private releaseAll;
     }
 }
+declare module "messier/engine/pipelines" {
+    import type { Material } from "messier/engine/material";
+    import type { Mesh } from "messier/engine/mesh";
+    import type { RenderTarget } from "messier/engine/frameGraph";
+    export type MeshPass = 'main' | 'shadow';
+    /** Everything that selects a mesh pipeline. Plain data; variantKeyString() is its identity. */
+    export interface MeshVariantKey {
+        pass: MeshPass;
+        cull: GPUCullMode;
+        /** Discard below the material's alpha cutoff. Only the shadow pass uses it; the main pass branches at runtime. */
+        alphaTest: boolean;
+        /** Null for depth-only passes. */
+        colorFormat: GPUTextureFormat | null;
+        sampleCount: number;
+        depthFormat: GPUTextureFormat;
+        /** Reversed-Z 'greater' for the main pass, 'less' for shadow maps. */
+        depthCompare: GPUCompareFunction;
+    }
+    export function variantKeyString(key: MeshVariantKey): string;
+    /**
+     * The pipeline key for drawing `mesh` with `material` in `pass` into `target`. The only place that decides mesh
+     * pipelines: draw loops, prewarming and tests all go through it.
+     */
+    export function meshVariantKey(pass: MeshPass, material: Pick<Material, 'doubleSided' | 'alphaCutoff'>, _mesh: Mesh | null, target: RenderTarget): MeshVariantKey;
+    /** Every valid key for these targets: the variants a project can need. Tests build them all. */
+    export function allMeshVariantKeys(targets: Record<MeshPass, RenderTarget>): MeshVariantKey[];
+    /** What the variants are made of: the WGSL pieces and the bind group layouts the renderer owns. */
+    export interface MeshPipelineSources {
+        /** Prepended to the main pass shader (frame bindings, skyRadiance). */
+        common: string;
+        /** Prepended to both mesh shaders: the Material and Object structs, mirrored by the renderer's packing. */
+        meshData: string;
+        mesh: string;
+        shadow: string;
+        layouts: {
+            frame: GPUBindGroupLayout;
+            material: GPUBindGroupLayout;
+            object: GPUBindGroupLayout;
+            shadowFrame: GPUBindGroupLayout;
+        };
+        /** Interleaved mesh vertex stride (position 3, normal 3, uv 2 floats). */
+        vertexStride: number;
+    }
+    /** Mesh pipelines by variant: built on demand (counted, so hitches show) or ahead of time with prewarm(). */
+    export class MeshPipelines {
+        private readonly device;
+        private readonly sources;
+        /** Pipelines built synchronously by get() so far. RenderStats.pipelineBuilds reports a frame's share. */
+        builds: number;
+        private readonly pipelines;
+        private readonly pending;
+        private readonly modules;
+        private readonly layouts;
+        constructor(device: GPUDevice, sources: MeshPipelineSources);
+        /** Pipelines in the cache. */
+        get size(): number;
+        has(key: MeshVariantKey): boolean;
+        /** The pipeline for `key`, built now if it isn't cached (a hitch, counted in `builds`). */
+        get(key: MeshVariantKey): GPURenderPipeline;
+        /** Builds the pipelines of `keys` that aren't cached, in the background (createRenderPipelineAsync). */
+        prewarm(keys: readonly MeshVariantKey[]): Promise<void>;
+        private module;
+        /**
+         * Main: frame, material, object. Shadow: its own group 0 (the frame group holds the shadow map being drawn into),
+         * then object, then, for the alpha test, the material (the same bind groups the main pass uses).
+         */
+        private pipelineLayout;
+        private describe;
+    }
+}
 declare module "messier/engine/renderer" {
     import type { Scene } from "messier/engine/scene";
     import type { Camera } from "messier/engine/camera";
     import { type OverlayBuilder } from "messier/engine/overlay";
     import { type Draw2D } from "messier/engine/draw2d";
+    import { type RenderTarget } from "messier/engine/frameGraph";
+    import { MeshPipelines, type MeshPass, type MeshVariantKey } from "messier/engine/pipelines";
     export const MAX_LIGHTS = 128;
     export interface RenderOptions {
         time?: number;
@@ -2222,6 +2294,8 @@ declare module "messier/engine/renderer" {
         shadowCasters: number;
         /** Shape2D/Text2D components drawn. */
         elements2D: number;
+        /** Mesh pipelines built during the frame because they weren't prewarmed (each one a hitch). */
+        pipelineBuilds: number;
     }
     /**
      * Forward renderer: a shadow pass (one directional light), a 4x MSAA HDR main pass (lit meshes, the sky), a tonemap
@@ -2243,9 +2317,8 @@ declare module "messier/engine/renderer" {
         private readonly materialLayout;
         private readonly objectLayout;
         private readonly shadowFrameLayout;
-        private readonly meshPipelineCulled;
-        private readonly meshPipelineDoubleSided;
-        private readonly shadowPipeline;
+        /** Mesh and shadow pipelines by variant (see pipelines.ts). */
+        readonly meshPipelines: MeshPipelines;
         private readonly gridPipeline;
         private readonly overlayDepthPipeline;
         private readonly overlayTopPipeline;
@@ -2314,7 +2387,19 @@ declare module "messier/engine/renderer" {
         private computeShadowMatrix;
         /** Renders one frame. World matrices must be up to date (Scene.updateMatrices). */
         render(scene: Scene, camera: Camera, options?: RenderOptions): RenderStats;
-        /** The shadow pass: depth only, on its own group 0 (the frame group holds the shadow map it's drawing into). */
+        /** The attachments the mesh passes draw into, as the frame graph declares them: what mesh variants are made for. */
+        meshTargets(): Record<MeshPass, RenderTarget>;
+        /** Every mesh pipeline variant this renderer can need. */
+        meshVariantKeys(): MeshVariantKey[];
+        /**
+         * Builds the mesh pipelines `scene` draws with in the background, so they're ready when it's rendered instead of
+         * built in the middle of a frame. Call after a scene or an asset loads.
+         */
+        prewarm(scene: Scene): Promise<void>;
+        /**
+         * The shadow pass: depth only, on its own group 0 (the frame group holds the shadow map it's drawing into). The
+         * alpha-tested variant reads the material from group 2.
+         */
         private drawShadowCasters;
         /** The main pass: lit meshes, then the sky behind them, as linear radiance. */
         private drawScene;
