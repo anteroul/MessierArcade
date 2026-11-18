@@ -1,6 +1,6 @@
 {
   "format": "messier-scene",
-  "version": 1,
+  "version": 2,
   "settings": {
     "ambientColor": [
       0.4,

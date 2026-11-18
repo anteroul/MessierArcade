@@ -870,631 +870,28 @@ declare module "messier/engine/sky" {
         get effectiveMode(): SkyMode;
     }
 }
-declare module "messier/engine/scene" {
-    import { type Mat4, type Quat, type Vec3 } from "messier/engine/math";
-    import { Transform } from "messier/engine/transform";
-    import { Component, type ComponentClass, type ComponentInit, type ComponentType } from "messier/engine/component";
-    import type { Mesh } from "messier/engine/mesh";
-    import type { Material } from "messier/engine/material";
-    import { Light } from "messier/engine/light";
-    import { CameraComponent } from "messier/engine/camera";
-    import { Behaviour } from "messier/engine/behaviours";
-    import { PhysicsWorld, RigidBody } from "messier/engine/physics";
-    import { ScriptLibrary } from "messier/engine/scripting";
-    import { Signal } from "messier/engine/signal";
-    import { Sky } from "messier/engine/sky";
-    /**
-     * A node in the scene graph: a name, a Transform (always exactly one), child objects and components.
-     * `mesh`, `material`, `light`, `camera` and `rigidBody` are shortcuts for the first component of that kind.
-     */
-    export class GameObject {
-        readonly id: number;
-        name: string;
-        readonly transform: Transform;
-        /** Child objects, in order. Change it through add()/remove() or transform.setParent(). */
-        readonly children: readonly GameObject[];
-        _scene: Scene | null;
-        /** In a scene, active in the hierarchy and not destroyed: its enabled components are live. */
-        _live: boolean;
-        private _activeSelf;
-        private _activeInHierarchy;
-        private _destroyed;
-        private readonly _components;
-        private _groups;
-        private _castShadows;
-        private _childAdded;
-        private _childRemoved;
-        private _destroyedSignal;
-        constructor(name?: string);
-        get parent(): GameObject | null;
-        /** Adds `child` at `index` (default: last), keeping its local transform. */
-        add(child: GameObject, index?: number): GameObject;
-        remove(child: GameObject): void;
-        isAncestorOf(other: GameObject): boolean;
-        /** The scene this object is in, or null when detached. */
-        get scene(): Scene | null;
-        traverse(fn: (obj: GameObject) => void | boolean): void;
-        /** A descendant by a path of child names: `find('Body/Weapon')`. Null if any step is missing. */
-        find(path: string): GameObject | null;
-        /** Emitted after a child is added (including reordering under the same parent). */
-        get childAdded(): Signal<[child: GameObject]>;
-        /** Emitted after a child is removed. */
-        get childRemoved(): Signal<[child: GameObject]>;
-        /** Emitted once when the object is destroyed. */
-        get destroyed(): Signal<[obj: GameObject]>;
-        /** The object's own active flag. Inactive objects and their descendants aren't drawn and their components don't run. */
-        get activeSelf(): boolean;
-        set activeSelf(v: boolean);
-        setActive(active: boolean): void;
-        /** Active itself and all its ancestors are active. */
-        get activeInHierarchy(): boolean;
-        /** Same as activeSelf (the editor's "Visible" checkbox and older scenes call it that). */
-        get visible(): boolean;
-        set visible(v: boolean);
-        /** True when this object and all its ancestors are visible (active). */
-        isVisibleInHierarchy(): boolean;
-        /** True from the moment the object is destroyed. */
-        get isDestroyed(): boolean;
-        /** Groups (tags) this object belongs to. */
-        get groups(): ReadonlySet<string>;
-        addToGroup(name: string): void;
-        removeFromGroup(name: string): void;
-        isInGroup(name: string): boolean;
-        /** Attached components in order (not including the transform). */
-        get components(): readonly Component[];
-        /** The attached behaviours (a new array each call). */
-        get behaviours(): Behaviour[];
-        /** Creates a component, applies `init` and attaches it. */
-        addComponent<T extends Component>(type: ComponentType<T>, init?: ComponentInit<T>): T;
-        /** Attaches an existing, detached component at `index` (default: last). */
-        attachComponent<T extends Component>(component: T, index?: number): T;
-        /** Detaches a component without destroying it, so it can be attached again (the editor's undo uses this). */
-        detachComponent(component: Component): boolean;
-        /** Destroys a component of this object. */
-        removeComponent(component: Component): void;
-        /** The first component that is an instance of `type` (subclasses included), or null. */
-        getComponent<T extends Component>(type: ComponentClass<T>): T | null;
-        /** Every component that is an instance of `type`, appended to `out`. */
-        getComponents<T extends Component>(type: ComponentClass<T>, out?: T[]): T[];
-        /** The first matching component on this object or a descendant (depth first), skipping inactive objects unless asked. */
-        getComponentInChildren<T extends Component>(type: ComponentClass<T>, includeInactive?: boolean): T | null;
-        /** The first matching component on this object or an ancestor. */
-        getComponentInParent<T extends Component>(type: ComponentClass<T>): T | null;
-        get mesh(): Mesh | null;
-        set mesh(m: Mesh | null);
-        get material(): Material | null;
-        set material(m: Material | null);
-        get castShadows(): boolean;
-        set castShadows(v: boolean);
-        get light(): Light | null;
-        set light(l: Light | null);
-        get camera(): CameraComponent | null;
-        set camera(c: CameraComponent | null);
-        get rigidBody(): RigidBody | null;
-        set rigidBody(rb: RigidBody | null);
-        private _meshRenderer;
-        private _replace;
-        /** World matrix (cached and always current; don't modify). */
-        get worldMatrix(): Mat4;
-        get normalMatrix(): Mat4;
-        /** A copy of the world matrix. */
-        computeWorldMatrix(): Mat4;
-        worldPosition(): Vec3;
-        worldRotation(): Quat;
-        /** Direction the object faces (local -Z) in world space. */
-        forward(): Vec3;
-        /** Sets the world-space position, converting into the parent's space. */
-        setWorldPosition(p: Vec3): void;
-        setWorldRotation(q: Quat): void;
-        /** Re-parents while keeping the current world transform. */
-        setParentKeepWorld(parent: GameObject, index?: number): void;
-        /**
-         * Deep copy of the object, its components (via Component.clone()) and descendants. Meshes and textures are shared;
-         * materials are copied. The copy is detached; see GameObject.instantiate().
-         */
-        clone(): GameObject;
-        /**
-         * Clones `original` into a scene: under `parent` (keeping the original's local transform) or, by default, at the
-         * top level of the original's scene where the original is in the world.
-         */
-        static instantiate(original: GameObject, parent?: GameObject): GameObject;
-        /**
-         * Destroys an object (with its descendants) or a single component. In a running scene this is deferred: the target
-         * is marked at once (it leaves Scene.query() and gets no further callbacks), and onDisable → onDestroy run and it is
-         * detached at the end of the frame (Scene.processDestroyed). Elsewhere it happens immediately.
-         */
-        static destroy(target: GameObject | Component): void;
-        /** Runs the destroy callbacks and detaches `target`. Called by destroy() or at the end of the frame. */
-        static _finishDestroy(target: GameObject | Component): void;
-        private _markDestroyed;
-        private _dispose;
-        /** Called by Transform.setParent after the hierarchy changed. */
-        _parentChanged(oldParent: GameObject | null): void;
-        /** Marks this object as the root of `scene`. */
-        _makeSceneRoot(scene: Scene): void;
-        /** Recomputes scene, activeInHierarchy and liveness for this subtree and syncs components whose state changed. */
-        private _refreshState;
-    }
-    export class Scene {
-        /** Invisible container; top-level objects are its children. */
-        readonly root: GameObject;
-        /** Linear RGB ambient light color, multiplied by ambientIntensity. Unused while the sky lights the scene. */
-        ambientColor: Vec3;
-        ambientIntensity: number;
-        /** Clear color (display space), shown when `sky.mode` is 'color'. */
-        background: Vec3;
-        /** Backdrop and, unless it's a flat color, environment lighting. */
-        readonly sky: Sky;
-        exposure: number;
-        /** Half extent (world units) of the directional shadow frustum. */
-        shadowExtent: number;
-        readonly physics: PhysicsWorld;
-        /** TypeScript behaviour scripts available to this scene's objects (shared with clones). */
-        readonly scripts: ScriptLibrary;
-        /** Emitted when a behaviour's hook throws (the behaviour is then paused). Without listeners the error is logged. */
-        readonly behaviourError: Signal<[behaviour: Behaviour, error: unknown, hook: string]>;
-        private readonly _registry;
-        private readonly _groups;
-        private _running;
-        private readonly _startQueue;
-        private readonly _updateList;
-        private readonly _fixedList;
-        private readonly _lateList;
-        private _dispatching;
-        private _holes;
-        private readonly _destroyQueue;
-        private readonly _clock;
-        constructor(scripts?: ScriptLibrary);
-        /**
-         * A copy to run (the editor plays a clone so Stop can throw it away): same settings and script library, every
-         * object cloned with GameObject.clone(). The copy isn't running.
-         */
-        clone(): Scene;
-        /** The top-level objects. */
-        get rootObjects(): readonly GameObject[];
-        add(obj: GameObject, parent?: GameObject): GameObject;
-        remove(obj: GameObject): void;
-        traverse(fn: (obj: GameObject) => void | boolean): void;
-        find(predicate: (obj: GameObject) => boolean): GameObject | null;
-        findByName(name: string): GameObject | null;
-        /**
-         * Live components of a class (subclasses included): enabled, on objects active in this scene. The array is kept up
-         * to date as components are added, removed, enabled and disabled, so don't modify it, and copy it if you change
-         * the scene while iterating.
-         */
-        query<T extends Component>(type: ComponentClass<T>): readonly T[];
-        /** Objects in this scene that are in group `name` (active or not), in the order they joined. */
-        getGroup(name: string): readonly GameObject[];
-        /** The camera the game renders through: the live camera with the highest priority (ties: the one listed first). */
-        activeCamera(): GameObject | null;
-        /** Brings every world matrix up to date in one top-down pass (world matrices are also correct when read lazily). */
-        updateMatrices(): void;
-        /** Whether behaviours run (Play). */
-        get running(): boolean;
-        /**
-         * Starts or stops running behaviours. Starting wakes every live behaviour (awake, then onEnable; start comes before
-         * its first update). Stopping runs onDisable and onDestroy and forgets lifecycle state, so the next start begins
-         * with awake again.
-         */
-        setRunning(running: boolean): void;
-        /** One fixed step: start pending behaviours, fixedUpdate, then physics. */
-        fixedUpdate(fixedDt: number): void;
-        /** Starts pending behaviours, then runs update(dt, time). */
-        updateBehaviours(dt: number, time: number): void;
-        lateUpdate(dt: number): void;
-        /** Finishes destroys requested during the frame (onDisable → onDestroy → detach). The engine calls it last. */
-        processDestroyed(): void;
-        /**
-         * Runs one whole frame with the scene's own fixed-step clock: when playing, fixed steps, update and lateUpdate;
-         * then world matrices and pending destroys. Handy for tools and tests; the engine drives the phases itself.
-         */
-        update(dt: number, time: number, playing: boolean): void;
-        _queueStart(b: Behaviour): void;
-        _queueDestroy(target: GameObject | Component): void;
-        _addToLists(b: Behaviour): void;
-        _removeFromLists(b: Behaviour): void;
-        private _removeFrom;
-        private _flushStarts;
-        private _dispatch;
-        private _compact;
-        _register(c: Component): void;
-        _unregister(c: Component): void;
-        _groupAdd(name: string, obj: GameObject): void;
-        _groupRemove(name: string, obj: GameObject): void;
-    }
+declare module "messier/engine/data" {
+    export type Json = Record<string, unknown>;
+    export function isObject(v: unknown): v is Json;
+    /** Copies `keys` from `src` onto `target` when the value has the same type as the target's current one (numbers must be finite). */
+    export function assignKnown<T extends object>(target: T, src: unknown, keys: readonly (keyof T & string)[]): T;
+    /** Plain-data copy of `keys` (arrays are copied). */
+    export function pickData<T extends object>(src: T, keys: readonly (keyof T & string)[]): Json;
 }
-declare module "messier/engine/component" {
-    import type { GameObject, Scene } from "messier/engine/scene";
-    import type { Transform } from "messier/engine/transform";
-    /** A concrete component class that addComponent() can construct. */
-    export type ComponentType<T extends Component> = new () => T;
-    /** Any component class, including abstract ones like Behaviour, for lookups and queries. */
-    export type ComponentClass<T extends Component> = abstract new (...args: never[]) => T;
-    type DataKeys<T> = {
-        [K in keyof T]: T[K] extends (...args: never[]) => unknown ? never : K;
-    }[keyof T];
-    /** Initial field values for addComponent(), applied before the component is attached (so before awake). */
-    export type ComponentInit<T> = Partial<Pick<T, DataKeys<T>>>;
+declare module "messier/engine/sceneFormat" {
+    import { type Json } from "messier/engine/data";
+    export const SCENE_FORMAT = "messier-scene";
+    export const PREFAB_FORMAT = "messier-prefab";
+    /** Version of scene and prefab files. Bump it, with a migration, for changes that old readers would misread. */
+    export const SCENE_VERSION = 2;
+    /** Calls `fn` for every object of a scene or prefab document: top-level ones, children, objects added to instances. */
+    export function forEachObject(doc: Json, fn: (obj: Json) => void): void;
     /**
-     * Base class of everything attached to a GameObject (except its Transform). A component is *live* while it's
-     * enabled and its object is active in the hierarchy of a scene; live components are listed by Scene.query().
+     * `data` as a current-version document of `format` ('messier-scene' or 'messier-prefab'): itself when it is current,
+     * else an upgraded copy. Throws when it isn't such a document or was saved by a newer version. `what` names it in
+     * errors ('scene', 'prefab').
      */
-    export abstract class Component {
-        private _gameObject;
-        private _enabled;
-        _registeredIn: Scene | null;
-        _destroyed: boolean;
-        /** The object this component is attached to. Throws before it's attached (e.g. in field initializers). */
-        get gameObject(): GameObject;
-        /** Whether the component is attached to an object. */
-        get attached(): boolean;
-        get transform(): Transform;
-        get enabled(): boolean;
-        set enabled(v: boolean);
-        /** Enabled, attached to an object that is active in a scene's hierarchy, and not destroyed. */
-        get isActiveAndEnabled(): boolean;
-        /** True from the moment the component (or its object) is destroyed. */
-        get isDestroyed(): boolean;
-        /**
-         * A detached copy for GameObject.clone()/instantiate(). The default constructs the same class and copies own
-         * enumerable fields that don't start with `_`: arrays and typed arrays one level deep (vectors), Signals as new
-         * empty signals (a copy has its own listeners), other objects shared. Override it when a component holds state
-         * that needs deeper copies.
-         */
-        clone(): Component;
-        /** Public fields only, so components can be logged and stringified (the owner link would be circular). */
-        toJSON(): Record<string, unknown>;
-        /** Called once when the destruction completes (after onDestroy for behaviours). */
-        _disposed(): void;
-        /** Called by GameObject when this component is attached to or detached from it. */
-        _setOwner(obj: GameObject | null): void;
-        /**
-         * Re-evaluates whether the component should be listed in its scene (and, for behaviours, which lifecycle callbacks
-         * are due). Called whenever enabled, the object's active state, its scene or the destroyed flag may have changed.
-         */
-        _sync(): void;
-    }
-}
-declare module "messier/engine/light" {
-    import { Component } from "messier/engine/component";
-    import type { Vec3 } from "messier/engine/math";
-    export type LightType = 'directional' | 'point' | 'spot';
-    export const LIGHT_TYPE_INDEX: Record<LightType, number>;
-    /** Fields saved with a scene. Keep in sync with clone(). */
-    export const LIGHT_FIELDS: readonly ["type", "color", "intensity", "range", "innerAngle", "outerAngle", "castShadows"];
-    /**
-     * Light component. Position and direction come from the owning GameObject:
-     * lights shine along the object's local -Z axis.
-     */
-    export class Light extends Component {
-        type: LightType;
-        /** Linear RGB. */
-        color: Vec3;
-        intensity: number;
-        /** Point / spot: distance at which the light fades to zero. */
-        range: number;
-        /** Spot: full-intensity cone half-angle in degrees. */
-        innerAngle: number;
-        /** Spot: cut-off cone half-angle in degrees. */
-        outerAngle: number;
-        /** Directional only: renders a shadow map (the first such light is used). */
-        castShadows: boolean;
-        constructor(type?: LightType, color?: Vec3, intensity?: number);
-        clone(): Light;
-    }
-}
-declare module "messier/engine/input" {
-    /** Built-in axes: WASD and the arrow keys. `vertical` is positive for W / Up. */
-    export type AxisName = 'horizontal' | 'vertical';
-    /**
-     * Keyboard state for scripts, by `KeyboardEvent.code` ('KeyW', 'ArrowUp',
-     * 'Space', 'ShiftLeft'…), so bindings don't move with the keyboard layout.
-     *
-     * The engine never listens to the DOM itself: the host (the editor, or a game
-     * page) forwards events with `keyDown`/`keyUp`, which lets it decide when the
-     * game has the keyboard. `Engine` calls `endFrame()` after each update, so
-     * `pressed`/`released` are true for exactly one update, even for a tap that
-     * went down and up between two frames.
-     */
-    export class InputState {
-        private readonly down;
-        private readonly pressedNow;
-        private readonly releasedNow;
-        /** True while any of the keys is held. */
-        isDown(...codes: string[]): boolean;
-        /** True on the update after any of the keys went down (key repeat doesn't count). */
-        pressed(...codes: string[]): boolean;
-        /** True on the update after any of the keys was let go. */
-        released(...codes: string[]): boolean;
-        /**
-         * -1, 0 or 1. Either a built-in axis (`'horizontal'`: A/D and ←/→,
-         * `'vertical'`: S/W and ↓/↑) or your own negative and positive key lists.
-         * Holding both sides gives 0.
-         */
-        axis(name: AxisName): number;
-        axis(negative: string[], positive: string[]): number;
-        /** Keys currently held, for debugging. */
-        get keys(): string[];
-        keyDown(code: string): void;
-        keyUp(code: string): void;
-        /** Forget everything, e.g. on window blur, where keyup events never arrive. */
-        reset(): void;
-        endFrame(): void;
-    }
-    /** The keyboard, shared by every script: `import { input } from 'messier'`. */
-    export const input: InputState;
-}
-declare module "messier/engine/sfx" {
-    export type SfxWave = 'square' | 'saw' | 'sine' | 'triangle' | 'noise';
-    export const SFX_WAVES: readonly SfxWave[];
-    export interface SfxParams {
-        wave: SfxWave;
-        /** Start pitch in Hz (for noise: how fast the noise changes). */
-        frequency: number;
-        /** Pitch change in octaves per second (negative falls). */
-        slide: number;
-        /** Seconds: rise to full volume, hold, then fade to silence. The clip is as long as the three together. */
-        attack: number;
-        sustain: number;
-        decay: number;
-        /** 0–1: extra volume at the start of the sustain, falling off over it. */
-        punch: number;
-        /** Vibrato depth (fraction of the pitch) and speed (Hz). */
-        vibratoDepth: number;
-        vibratoSpeed: number;
-        /** Square wave: fraction of each cycle that is high (0.5 is a plain square), and its change per second. */
-        duty: number;
-        dutySweep: number;
-        /** Pitch multiplier applied after `arpeggioTime` seconds (1 or a time of 0: none). Coins and power-ups use it. */
-        arpeggio: number;
-        arpeggioTime: number;
-        /** Restarts the pitch sweep every this many seconds (0: never). */
-        repeat: number;
-        /** Low-pass cutoff in Hz (0: off). */
-        lowpass: number;
-        /** 0–1. */
-        volume: number;
-        /** Noise seed. */
-        seed: number;
-    }
-    export const SFX_DEFAULTS: Readonly<SfxParams>;
-    /** Ready-made effects. Use one as is, or spread it and change a field: `{ ...SFX_PRESETS.laser, frequency: 900 }`. */
-    export const SFX_PRESETS: {
-        coin: Readonly<SfxParams>;
-        laser: Readonly<SfxParams>;
-        explosion: Readonly<SfxParams>;
-        hit: Readonly<SfxParams>;
-        jump: Readonly<SfxParams>;
-        powerup: Readonly<SfxParams>;
-        blip: Readonly<SfxParams>;
-        select: Readonly<SfxParams>;
-        thump: Readonly<SfxParams>;
-        /** A seamless one-second loop: an engine or machine drone. */
-        hum: Readonly<SfxParams>;
-    };
-    export type SfxPresetName = keyof typeof SFX_PRESETS;
-    /** The parameters as the number list a clip ref stores. */
-    export function packSfx(p: Readonly<SfxParams>): number[];
-    /** Reads a packed list; missing or invalid entries keep their defaults. */
-    export function unpackSfx(values: readonly number[]): SfxParams;
-    /** Renders mono samples at `sampleRate`. */
-    export function renderSfx(params: Readonly<SfxParams>, sampleRate?: number): Float32Array<ArrayBuffer>;
-    /** A variation of `params`: every number nudged by up to ±`amount` (a fraction), deterministic for a seed. */
-    export function mutateSfx(params: Readonly<SfxParams>, seed: number, amount?: number): SfxParams;
-}
-declare module "messier/engine/audioClip" {
-    import { type SfxParams } from "messier/engine/sfx";
-    /**
-     * Where a clip comes from, so a saved scene can rebuild it: the sound file of an imported project asset, or the
-     * synthesizer parameters (`packSfx`) of a generated effect.
-     */
-    export type ClipRef = {
-        asset: string;
-        index: number;
-    } | {
-        sfx: number[];
-    };
-    /** A sound: sample data (one or two channels) at a sample rate. Clips are immutable, so objects share them freely. */
-    export class AudioClip {
-        /** Source of the clip, or null when it was made at runtime from raw samples and can't be saved. */
-        ref: ClipRef | null;
-        /** The Web Audio buffer, created on first play. */
-        _buffer: AudioBuffer | null;
-        readonly name: string;
-        readonly channels: readonly Float32Array<ArrayBuffer>[];
-        readonly sampleRate: number;
-        constructor(name: string, channels: Float32Array<ArrayBuffer>[], sampleRate: number);
-        /** Length in seconds. */
-        get duration(): number;
-        /**
-         * A synthesized sound effect (see `SFX_PRESETS`). The same parameters give the same clip instance, so calling this
-         * every time a sound plays is cheap.
-         */
-        static synth(params: Readonly<SfxParams> | readonly number[], name?: string): AudioClip;
-        /** The synthesizer parameters of a clip made by `synth()`, or null for other clips. */
-        get sfx(): SfxParams | null;
-        /** Copies a decoded Web Audio buffer. */
-        static fromAudioBuffer(buffer: AudioBuffer, name: string): AudioClip;
-    }
-}
-declare module "messier/engine/audio" {
-    import type { AudioClip } from "messier/engine/audioClip";
-    import type { Camera } from "messier/engine/camera";
-    import type { Component } from "messier/engine/component";
-    import type { Scene } from "messier/engine/scene";
-    import type { Vec3 } from "messier/engine/math";
-    /** Options for `audio.play()`. */
-    export interface PlayOptions {
-        /** 0 and up (1 = as recorded). */
-        volume?: number;
-        /** Playback speed: 2 is an octave up and twice as fast. */
-        pitch?: number;
-        loop?: boolean;
-        /** World position: the sound is panned and fades with distance from the listener (and follows `owner`, if given). Omit for a 2D sound. */
-        position?: Readonly<Vec3>;
-        /** Positional sounds: full volume up to this distance... */
-        minDistance?: number;
-        /** ...fading to silence at this one. */
-        maxDistance?: number;
-        /**
-         * The component the sound belongs to (an AudioSource). A positional sound follows its object, and the sound stops
-         * when the component stops being live in the active, running scene (disabled, destroyed, or its scene unloaded).
-         */
-        owner?: Component;
-    }
-    /** One playing sound. */
-    export class AudioVoice {
-        /** Set when the sound finished or was stopped. */
-        ended: boolean;
-        readonly owner: Component | null;
-        readonly loop: boolean;
-        readonly startedAt: number;
-        readonly _node: AudioBufferSourceNode;
-        readonly _gain: GainNode;
-        readonly _panner: PannerNode | null;
-        constructor(node: AudioBufferSourceNode, gain: GainNode, panner: PannerNode | null, owner: Component | null, loop: boolean, startedAt: number);
-        get playing(): boolean;
-        set volume(v: number);
-        set pitch(v: number);
-        stop(): void;
-        _setPosition(p: Readonly<Vec3>): void;
-    }
-    /**
-     * Sound output, through the Web Audio API. Browsers only let a page start audio after the user interacted with it,
-     * and the engine never listens to the page itself: the host (the editor, or a built game) calls `resume()` from
-     * its key and pointer handlers. Until then, and wherever there is no Web Audio (Node), `play()` does nothing and
-     * returns null. `Engine.step` calls `update()` every frame to move the listener with the camera being rendered.
-     */
-    export class AudioSystem {
-        private ctx;
-        private master;
-        private readonly voices;
-        private volume;
-        private mute;
-        /** Whether this environment has Web Audio at all. */
-        get supported(): boolean;
-        /** True once the context exists and runs (after the first user interaction): sounds are audible. */
-        get ready(): boolean;
-        /** The Web Audio context, once `resume()` created it. */
-        get context(): AudioContext | null;
-        get masterVolume(): number;
-        set masterVolume(v: number);
-        get muted(): boolean;
-        set muted(v: boolean);
-        /** Sounds playing now. */
-        get activeVoices(): number;
-        /** Creates or resumes the audio context. Call it from a user gesture (key or pointer event). */
-        resume(): void;
-        /** Decodes a sound file (wav, mp3, ogg…). Works before `resume()`; fails where there is no Web Audio. */
-        decode(data: ArrayBuffer): Promise<AudioBuffer>;
-        /** Plays a clip once (or looping). Returns null when audio isn't running yet or the clip is empty. */
-        play(clip: AudioClip, options?: PlayOptions): AudioVoice | null;
-        /** Stops every sound. */
-        stopAll(): void;
-        /**
-         * Per frame: places the listener at `view`, moves positional sounds with their owners, and stops sounds whose owner
-         * left the running `scene`.
-         */
-        update(scene: Scene, view: Camera): void;
-        private prune;
-        private applyVolume;
-    }
-    /** The engine's sound output. */
-    export const audio: AudioSystem;
-}
-declare module "messier/engine/audioSource" {
-    import { type AudioVoice } from "messier/engine/audio";
-    import type { AudioClip } from "messier/engine/audioClip";
-    import { Component } from "messier/engine/component";
-    import type { Scene } from "messier/engine/scene";
-    /** Fields saved with a scene (the clip is saved as a ref). Keep in sync with clone(). */
-    export const AUDIO_SOURCE_FIELDS: readonly ["volume", "pitch", "loop", "playOnStart", "spatial", "minDistance", "maxDistance"];
-    type AudioSourceInit = Partial<Pick<AudioSource, (typeof AUDIO_SOURCE_FIELDS)[number] | 'clip'>>;
-    /**
-     * Plays a clip from its object. Sounds only play while the scene runs (Play in the editor, or a built game), and stop
-     * when the source is disabled, its object is deactivated or destroyed, or another scene loads. A `spatial` source is
-     * heard from where its object is, relative to the camera being rendered.
-     */
-    export class AudioSource extends Component {
-        clip: AudioClip | null;
-        /** 0 and up. */
-        volume: number;
-        /** Playback speed: 2 is an octave up. */
-        pitch: number;
-        loop: boolean;
-        /** Plays whenever the source becomes live in a running scene: when Play starts, or when its object is activated. */
-        playOnStart: boolean;
-        /** Positional: panned and fading with distance. Off: the same everywhere (music, UI sounds). */
-        spatial: boolean;
-        /** Spatial: full volume up to this distance, fading to silence at maxDistance. */
-        minDistance: number;
-        maxDistance: number;
-        _voice: AudioVoice | null;
-        _autoplayed: boolean;
-        constructor(init?: AudioSourceInit);
-        /** Whether the source's own sound (from play()) is playing. One-shots don't count. */
-        get isPlaying(): boolean;
-        /** Plays the clip from the start, replacing what play() started before. */
-        play(): void;
-        stop(): void;
-        /** Plays a clip (default: this source's) once over whatever is playing; several can overlap: shots, footsteps, impacts. */
-        playOneShot(clip?: AudioClip | null, volumeScale?: number): void;
-        _start(clip: AudioClip, volumeScale: number, loop: boolean): AudioVoice | null;
-    }
-    /**
-     * Per frame, for the active scene: starts `playOnStart` sources each time they become live (enabled, active, in the
-     * running scene) once audio runs, so a looping sound that was due before the first user interaction still starts.
-     * Also applies volume and pitch changes to playing sounds.
-     */
-    export function updateAudioSources(scene: Scene): void;
-}
-declare module "messier/engine/primitives" {
-    import { Mesh } from "messier/engine/mesh";
-    export function createCube(size?: number): Mesh;
-    export function createSphere(radius?: number, segments?: number, rings?: number): Mesh;
-    export function createPlane(size?: number, subdivisions?: number): Mesh;
-    export function createCylinder(radius?: number, height?: number, segments?: number): Mesh;
-    export function createTorus(radius?: number, tube?: number, radialSegments?: number, tubularSegments?: number): Mesh;
-    export type PrimitiveKind = 'cube' | 'sphere' | 'plane' | 'cylinder' | 'torus';
-    /** Rebuilds a primitive from a saved `{ primitive, args }` ref, or null for an unknown kind. */
-    export function buildPrimitive(kind: string, args: number[]): Mesh | null;
-    /** Shared unit-sized primitive meshes for editor "Add" menus. */
-    export function getPrimitive(kind: PrimitiveKind): Mesh;
-}
-declare module "messier/engine/overlay" {
-    import { type Vec3, type Vec4 } from "messier/engine/math";
-    import type { Camera } from "messier/engine/camera";
-    /** Floats per overlay vertex: position(3) + color(4). */
-    export const OVERLAY_STRIDE_FLOATS = 7;
-    /**
-     * Immediate-mode builder for editor helper geometry. Lines are expanded on the
-     * CPU into camera-facing ribbons with a constant on-screen pixel width.
-     * `depth` geometry is occluded by the scene; `top` geometry is always visible.
-     */
-    export class OverlayBuilder {
-        readonly depth: number[];
-        readonly top: number[];
-        private camera;
-        private viewportHeight;
-        begin(camera: Camera, viewportHeight: number): void;
-        get isEmpty(): boolean;
-        pixelSize(p: Readonly<Vec3>): number;
-        triangle(a: Readonly<Vec3>, b: Readonly<Vec3>, c: Readonly<Vec3>, color: Readonly<Vec4>, onTop?: boolean): void;
-        /** Line segment with a constant on-screen width in pixels. */
-        line(a: Readonly<Vec3>, b: Readonly<Vec3>, color: Readonly<Vec4>, widthPx?: number, onTop?: boolean): void;
-        polyline(points: Readonly<Vec3>[], color: Readonly<Vec4>, widthPx?: number, onTop?: boolean, closed?: boolean): void;
-        /** Circle in the plane perpendicular to `normal`. */
-        circle(center: Readonly<Vec3>, normal: Readonly<Vec3>, radius: number, color: Readonly<Vec4>, widthPx?: number, onTop?: boolean, segments?: number): void;
-        cone(base: Readonly<Vec3>, tip: Readonly<Vec3>, radius: number, color: Readonly<Vec4>, onTop?: boolean, segments?: number): void;
-        /** Axis-aligned cube centered at `center`. */
-        cube(center: Readonly<Vec3>, half: number, color: Readonly<Vec4>, onTop?: boolean): void;
-        /** Small octahedron, used as a light icon. */
-        diamond(center: Readonly<Vec3>, radius: number, color: Readonly<Vec4>, onTop?: boolean): void;
-        /** Wireframe box from 8 corners ordered as produced by boxCorners(). */
-        wireBox(corners: Vec3[], color: Readonly<Vec4>, widthPx?: number, onTop?: boolean): void;
-    }
-    export function boxCorners(min: Readonly<Vec3>, max: Readonly<Vec3>): Vec3[];
-    export function circlePoints(center: Readonly<Vec3>, normal: Readonly<Vec3>, radius: number, segments: number): Vec3[];
+    export function upgradeDocument(data: unknown, format: string, what: string): Json;
 }
 declare module "messier/engine/font" {
     /** Pixels per em at which glyphs are rasterized into the atlas. */
@@ -1816,6 +1213,837 @@ declare module "messier/engine/shapes2d" {
         localBounds(): [number, number, number, number];
     }
 }
+declare module "messier/engine/sfx" {
+    export type SfxWave = 'square' | 'saw' | 'sine' | 'triangle' | 'noise';
+    export const SFX_WAVES: readonly SfxWave[];
+    export interface SfxParams {
+        wave: SfxWave;
+        /** Start pitch in Hz (for noise: how fast the noise changes). */
+        frequency: number;
+        /** Pitch change in octaves per second (negative falls). */
+        slide: number;
+        /** Seconds: rise to full volume, hold, then fade to silence. The clip is as long as the three together. */
+        attack: number;
+        sustain: number;
+        decay: number;
+        /** 0–1: extra volume at the start of the sustain, falling off over it. */
+        punch: number;
+        /** Vibrato depth (fraction of the pitch) and speed (Hz). */
+        vibratoDepth: number;
+        vibratoSpeed: number;
+        /** Square wave: fraction of each cycle that is high (0.5 is a plain square), and its change per second. */
+        duty: number;
+        dutySweep: number;
+        /** Pitch multiplier applied after `arpeggioTime` seconds (1 or a time of 0: none). Coins and power-ups use it. */
+        arpeggio: number;
+        arpeggioTime: number;
+        /** Restarts the pitch sweep every this many seconds (0: never). */
+        repeat: number;
+        /** Low-pass cutoff in Hz (0: off). */
+        lowpass: number;
+        /** 0–1. */
+        volume: number;
+        /** Noise seed. */
+        seed: number;
+    }
+    export const SFX_DEFAULTS: Readonly<SfxParams>;
+    /** Ready-made effects. Use one as is, or spread it and change a field: `{ ...SFX_PRESETS.laser, frequency: 900 }`. */
+    export const SFX_PRESETS: {
+        coin: Readonly<SfxParams>;
+        laser: Readonly<SfxParams>;
+        explosion: Readonly<SfxParams>;
+        hit: Readonly<SfxParams>;
+        jump: Readonly<SfxParams>;
+        powerup: Readonly<SfxParams>;
+        blip: Readonly<SfxParams>;
+        select: Readonly<SfxParams>;
+        thump: Readonly<SfxParams>;
+        /** A seamless one-second loop: an engine or machine drone. */
+        hum: Readonly<SfxParams>;
+    };
+    export type SfxPresetName = keyof typeof SFX_PRESETS;
+    /** The parameters as the number list a clip ref stores. */
+    export function packSfx(p: Readonly<SfxParams>): number[];
+    /** Reads a packed list; missing or invalid entries keep their defaults. */
+    export function unpackSfx(values: readonly number[]): SfxParams;
+    /** Renders mono samples at `sampleRate`. */
+    export function renderSfx(params: Readonly<SfxParams>, sampleRate?: number): Float32Array<ArrayBuffer>;
+    /** A variation of `params`: every number nudged by up to ±`amount` (a fraction), deterministic for a seed. */
+    export function mutateSfx(params: Readonly<SfxParams>, seed: number, amount?: number): SfxParams;
+}
+declare module "messier/engine/audioClip" {
+    import { type SfxParams } from "messier/engine/sfx";
+    /**
+     * Where a clip comes from, so a saved scene can rebuild it: the sound file of an imported project asset, or the
+     * synthesizer parameters (`packSfx`) of a generated effect.
+     */
+    export type ClipRef = {
+        asset: string;
+        index: number;
+    } | {
+        sfx: number[];
+    };
+    /** A sound: sample data (one or two channels) at a sample rate. Clips are immutable, so objects share them freely. */
+    export class AudioClip {
+        /** Source of the clip, or null when it was made at runtime from raw samples and can't be saved. */
+        ref: ClipRef | null;
+        /** The Web Audio buffer, created on first play. */
+        _buffer: AudioBuffer | null;
+        readonly name: string;
+        readonly channels: readonly Float32Array<ArrayBuffer>[];
+        readonly sampleRate: number;
+        constructor(name: string, channels: Float32Array<ArrayBuffer>[], sampleRate: number);
+        /** Length in seconds. */
+        get duration(): number;
+        /**
+         * A synthesized sound effect (see `SFX_PRESETS`). The same parameters give the same clip instance, so calling this
+         * every time a sound plays is cheap.
+         */
+        static synth(params: Readonly<SfxParams> | readonly number[], name?: string): AudioClip;
+        /** The synthesizer parameters of a clip made by `synth()`, or null for other clips. */
+        get sfx(): SfxParams | null;
+        /** Copies a decoded Web Audio buffer. */
+        static fromAudioBuffer(buffer: AudioBuffer, name: string): AudioClip;
+    }
+}
+declare module "messier/engine/audio" {
+    import type { AudioClip } from "messier/engine/audioClip";
+    import type { Camera } from "messier/engine/camera";
+    import type { Component } from "messier/engine/component";
+    import type { Scene } from "messier/engine/scene";
+    import type { Vec3 } from "messier/engine/math";
+    /** Options for `audio.play()`. */
+    export interface PlayOptions {
+        /** 0 and up (1 = as recorded). */
+        volume?: number;
+        /** Playback speed: 2 is an octave up and twice as fast. */
+        pitch?: number;
+        loop?: boolean;
+        /** World position: the sound is panned and fades with distance from the listener (and follows `owner`, if given). Omit for a 2D sound. */
+        position?: Readonly<Vec3>;
+        /** Positional sounds: full volume up to this distance... */
+        minDistance?: number;
+        /** ...fading to silence at this one. */
+        maxDistance?: number;
+        /**
+         * The component the sound belongs to (an AudioSource). A positional sound follows its object, and the sound stops
+         * when the component stops being live in the active, running scene (disabled, destroyed, or its scene unloaded).
+         */
+        owner?: Component;
+    }
+    /** One playing sound. */
+    export class AudioVoice {
+        /** Set when the sound finished or was stopped. */
+        ended: boolean;
+        readonly owner: Component | null;
+        readonly loop: boolean;
+        readonly startedAt: number;
+        readonly _node: AudioBufferSourceNode;
+        readonly _gain: GainNode;
+        readonly _panner: PannerNode | null;
+        constructor(node: AudioBufferSourceNode, gain: GainNode, panner: PannerNode | null, owner: Component | null, loop: boolean, startedAt: number);
+        get playing(): boolean;
+        set volume(v: number);
+        set pitch(v: number);
+        stop(): void;
+        _setPosition(p: Readonly<Vec3>): void;
+    }
+    /**
+     * Sound output, through the Web Audio API. Browsers only let a page start audio after the user interacted with it,
+     * and the engine never listens to the page itself: the host (the editor, or a built game) calls `resume()` from
+     * its key and pointer handlers. Until then, and wherever there is no Web Audio (Node), `play()` does nothing and
+     * returns null. `Engine.step` calls `update()` every frame to move the listener with the camera being rendered.
+     */
+    export class AudioSystem {
+        private ctx;
+        private master;
+        private readonly voices;
+        private volume;
+        private mute;
+        /** Whether this environment has Web Audio at all. */
+        get supported(): boolean;
+        /** True once the context exists and runs (after the first user interaction): sounds are audible. */
+        get ready(): boolean;
+        /** The Web Audio context, once `resume()` created it. */
+        get context(): AudioContext | null;
+        get masterVolume(): number;
+        set masterVolume(v: number);
+        get muted(): boolean;
+        set muted(v: boolean);
+        /** Sounds playing now. */
+        get activeVoices(): number;
+        /** Creates or resumes the audio context. Call it from a user gesture (key or pointer event). */
+        resume(): void;
+        /** Decodes a sound file (wav, mp3, ogg…). Works before `resume()`; fails where there is no Web Audio. */
+        decode(data: ArrayBuffer): Promise<AudioBuffer>;
+        /** Plays a clip once (or looping). Returns null when audio isn't running yet or the clip is empty. */
+        play(clip: AudioClip, options?: PlayOptions): AudioVoice | null;
+        /** Stops every sound. */
+        stopAll(): void;
+        /**
+         * Per frame: places the listener at `view`, moves positional sounds with their owners, and stops sounds whose owner
+         * left the running `scene`.
+         */
+        update(scene: Scene, view: Camera): void;
+        private prune;
+        private applyVolume;
+    }
+    /** The engine's sound output. */
+    export const audio: AudioSystem;
+}
+declare module "messier/engine/audioSource" {
+    import { type AudioVoice } from "messier/engine/audio";
+    import type { AudioClip } from "messier/engine/audioClip";
+    import { Component } from "messier/engine/component";
+    import type { Scene } from "messier/engine/scene";
+    /** Fields saved with a scene (the clip is saved as a ref). Keep in sync with clone(). */
+    export const AUDIO_SOURCE_FIELDS: readonly ["volume", "pitch", "loop", "playOnStart", "spatial", "minDistance", "maxDistance"];
+    type AudioSourceInit = Partial<Pick<AudioSource, (typeof AUDIO_SOURCE_FIELDS)[number] | 'clip'>>;
+    /**
+     * Plays a clip from its object. Sounds only play while the scene runs (Play in the editor, or a built game), and stop
+     * when the source is disabled, its object is deactivated or destroyed, or another scene loads. A `spatial` source is
+     * heard from where its object is, relative to the camera being rendered.
+     */
+    export class AudioSource extends Component {
+        clip: AudioClip | null;
+        /** 0 and up. */
+        volume: number;
+        /** Playback speed: 2 is an octave up. */
+        pitch: number;
+        loop: boolean;
+        /** Plays whenever the source becomes live in a running scene: when Play starts, or when its object is activated. */
+        playOnStart: boolean;
+        /** Positional: panned and fading with distance. Off: the same everywhere (music, UI sounds). */
+        spatial: boolean;
+        /** Spatial: full volume up to this distance, fading to silence at maxDistance. */
+        minDistance: number;
+        maxDistance: number;
+        _voice: AudioVoice | null;
+        _autoplayed: boolean;
+        constructor(init?: AudioSourceInit);
+        /** Whether the source's own sound (from play()) is playing. One-shots don't count. */
+        get isPlaying(): boolean;
+        /** Plays the clip from the start, replacing what play() started before. */
+        play(): void;
+        stop(): void;
+        /** Plays a clip (default: this source's) once over whatever is playing; several can overlap: shots, footsteps, impacts. */
+        playOneShot(clip?: AudioClip | null, volumeScale?: number): void;
+        _start(clip: AudioClip, volumeScale: number, loop: boolean): AudioVoice | null;
+    }
+    /**
+     * Per frame, for the active scene: starts `playOnStart` sources each time they become live (enabled, active, in the
+     * running scene) once audio runs, so a looping sound that was due before the first user interaction still starts.
+     * Also applies volume and pitch changes to playing sounds.
+     */
+    export function updateAudioSources(scene: Scene): void;
+}
+declare module "messier/engine/serialize" {
+    import { GameObject, type Scene } from "messier/engine/scene";
+    import { type Texture } from "messier/engine/material";
+    import type { AudioClip, ClipRef } from "messier/engine/audioClip";
+    import type { Mesh, ResourceRef } from "messier/engine/mesh";
+    import { type Quat, type Vec3 } from "messier/engine/math";
+    import { type Json } from "messier/engine/data";
+    import { SCENE_FORMAT } from "messier/engine/sceneFormat";
+    import { type NodeData, type PrefabData, type PrefabLibrary } from "messier/engine/prefab";
+    export { SCENE_FORMAT, SCENE_VERSION, PREFAB_FORMAT } from "messier/engine/sceneFormat";
+    export type BehaviourData = {
+        type: string;
+        enabled: boolean;
+        params: Record<string, number>;
+    } | {
+        script: string;
+        enabled: boolean;
+        overrides: Record<string, number>;
+    };
+    export interface ObjectData {
+        /** Set in prefabs: the object's id within the prefab. */
+        id?: string;
+        name: string;
+        position: Vec3;
+        rotation: Quat;
+        scale: Vec3;
+        visible: boolean;
+        castShadows: boolean;
+        mesh?: ResourceRef;
+        /** Material fields plus `texture` (a ref). */
+        material?: Json;
+        light?: Json;
+        camera?: Json;
+        rigidBody?: Json;
+        /** Shape2D fields plus `points` (flat x, y list). */
+        shape2d?: Json;
+        text2d?: Json;
+        /** AudioSource fields plus `clip` (a ClipRef). */
+        audioSource?: Json;
+        behaviours?: BehaviourData[];
+        children?: NodeData[];
+    }
+    export interface SceneData {
+        format: typeof SCENE_FORMAT;
+        version: number;
+        /** Environment (ambient, background, exposure, shadow extent), `sky` (Sky fields plus `texture`, a ref) and `physics` ({ gravity, iterations }). */
+        settings: Json;
+        objects: NodeData[];
+    }
+    /** Turns refs back into meshes and textures while a scene loads. */
+    export interface SceneResources {
+        /** Prefabs by asset id; without it, prefab instances load as empty placeholders (with a warning). */
+        prefab?(id: string): PrefabData | null;
+        mesh(ref: ResourceRef): Mesh | null;
+        texture(ref: ResourceRef): Texture | null;
+        /** Sound clips; without it, sources load without their clip (with a warning). */
+        clip?(ref: ClipRef): AudioClip | null;
+    }
+    export function isClipRef(v: unknown): v is ClipRef;
+    export function isResourceRef(v: unknown): v is ResourceRef;
+    /**
+     * Stamps `{ asset, index }` refs on the meshes and textures of a freshly loaded
+     * model, numbered in hierarchy order. Loaders are deterministic, so loading the
+     * same files again and tagging them gives the same numbering.
+     */
+    export function tagAssetResources(root: GameObject, asset: string): {
+        meshes: Mesh[];
+        textures: Texture[];
+    };
+    /** Snapshot of the scene as JSON-safe data. Problems (meshes built at runtime) are appended to `warnings`. */
+    export function serializeScene(scene: Scene, warnings?: string[]): SceneData;
+    /** One object with its descendants as saved in a scene; a prefab instance (needs `prefabs`) as its link and changes. */
+    export function serializeObject(obj: GameObject, prefabs: PrefabLibrary | null, warnings?: string[]): NodeData;
+    /**
+     * A prefab made of `obj` and its descendants. Instances among them become nested instances, and an instance root
+     * makes a variant of its prefab. With `applyTo` (the prefab `obj` is an instance of), it's that prefab's new
+     * version instead, `obj`'s changes included: its objects keep their ids, so other instances' overrides still find
+     * them. Throws when the prefab would contain itself.
+     */
+    export function prefabFromObject(obj: GameObject, prefabs: PrefabLibrary | null, warnings?: string[], applyTo?: string): PrefabData;
+    /**
+     * Turns an instance back into plain objects: its objects forget the prefab, while instances nested in it stay
+     * instances (and a variant becomes an instance of the prefab it's based on). Returns a function that undoes it.
+     */
+    export function unpackInstance(obj: GameObject, prefabs: PrefabLibrary | null): () => void;
+    /** `data` as a scene of the current version (upgraded if it's older). Throws unless it's a scene this version can read. */
+    export function upgradeSceneData(data: unknown): SceneData;
+    /**
+     * Replaces the scene's objects and settings with `data`. Scripts are looked up
+     * by name in `scene.scripts`, so load the project's scripts first. Missing
+     * resources, prefabs, scripts and behaviour types are skipped and reported in `warnings`.
+     */
+    export function applySceneData(scene: Scene, data: unknown, resources: SceneResources, warnings?: string[]): void;
+    /** A detached object built from saved data of the current version (see serializeObject). */
+    export function deserializeObject(data: NodeData, scene: Scene, resources: SceneResources, warnings?: string[]): GameObject;
+    /** A new, detached instance of prefab `id` as the prefab has it (its root's name and transform); null when it's missing. */
+    export function instantiatePrefab(id: string, scene: Scene, resources: SceneResources, warnings?: string[]): GameObject | null;
+    /** Asset ids a scene uses itself: its objects' (see collectAssetIds) and its sky image's. Project.usedAssetIds adds what its prefabs use. */
+    export function sceneAssetIds(data: SceneData, out?: Set<string>): Set<string>;
+    /** Asset ids anywhere in saved data: refs of meshes, textures and sounds, and prefabs that instances link to. */
+    export function collectAssetIds(data: unknown, out?: Set<string>): Set<string>;
+}
+declare module "messier/engine/prefab" {
+    import { type Json } from "messier/engine/data";
+    import { PREFAB_FORMAT } from "messier/engine/sceneFormat";
+    import type { ObjectData } from "messier/engine/serialize";
+    import type { Quat, Vec3 } from "messier/engine/math";
+    export const PREFAB_EXTENSION = ".prefab";
+    export const isPrefabFile: (name: string) => boolean;
+    export interface PrefabData {
+        format: typeof PREFAB_FORMAT;
+        version: number;
+        /** Every object in it (the root included) has an `id`. */
+        root: NodeData;
+    }
+    /** A prefab instance as saved in a scene or a prefab. */
+    export interface PrefabInstanceData {
+        /** The prefab's asset id. */
+        prefab: string;
+        /** Its id, inside a prefab. */
+        id?: string;
+        name: string;
+        position: Vec3;
+        rotation: Quat;
+        scale: Vec3;
+        /**
+         * Object id → changed values, by object key (`visible`, `mesh`, `behaviours`…: replaced whole) or
+         * `<component>.<field>` (`material.color`). A component key set to null removes the component, a field set to
+         * null removes the field (a texture).
+         */
+        overrides?: Record<string, Json>;
+        /** Objects of the prefab (with their descendants) this instance leaves out. */
+        removed?: string[];
+        /** Objects this instance adds, at `index` among the children of the prefab object `parent`. */
+        added?: {
+            parent: string;
+            index: number;
+            object: NodeData;
+        }[];
+    }
+    /** An object in a scene or prefab: plain, or a prefab instance. */
+    export type NodeData = ObjectData | PrefabInstanceData;
+    /** Prefab data by asset id. */
+    export interface PrefabLibrary {
+        prefab(id: string): PrefabData | null;
+    }
+    export function isInstanceData(d: unknown): d is PrefabInstanceData;
+    /** Keys of an expanded tree that aren't saved object data. */
+    export const EXPANDED_KEYS: readonly ["id", "instanceOf", "missingPrefab"];
+    /** A new object id for a prefab. Ids only have to be unique within their prefab; never contain '/'. */
+    export function newNodeId(): string;
+    /** Prefab file text: pretty JSON, like scene files. */
+    export function prefabText(data: PrefabData): string;
+    /** The prefab in a file's bytes, upgraded to the current version (cached per byte array). Throws when it isn't one. */
+    export function readPrefab(bytes: Uint8Array): PrefabData;
+    /** A prefab document around `root`, at the current version. */
+    export function prefabDocument(root: NodeData): PrefabData;
+    /** An id of a prefab's own expansion (whose root is `prefabRoot`) as seen in an instance whose root has id `rootId`. */
+    export function scopedId(id: string, prefabRoot: string, rootId: string): string;
+    /** The inverse of scopedId; null when `id` isn't in that instance. */
+    export function unscopedId(id: string, prefabRoot: string, rootId: string): string | null;
+    /**
+     * A prefab's objects as one tree (a copy): nested instances expanded, every object with its `id` and nested instance
+     * roots marked with `instanceOf` (their prefab). Null when the prefab is missing or contains itself.
+     */
+    export function expandPrefab(id: string, lib: PrefabLibrary, warnings?: string[], stack?: string[]): Json | null;
+    /**
+     * Stands in for an instance whose prefab is missing: an empty object with the instance's name and transform, carrying
+     * the instance data (`missingPrefab`) so saving writes it back unchanged.
+     */
+    export function missingPrefab(d: PrefabInstanceData, warnings: string[]): Json;
+    /** The objects of an instance: its prefab's, changed as the instance says. Null when the prefab is missing. */
+    export function expandInstance(inst: PrefabInstanceData, lib: PrefabLibrary, warnings?: string[], stack?: string[]): Json | null;
+    /**
+     * The changes that turn `base` (a prefab's expansion) into `live` (the same objects as saved now, by id, plus objects
+     * in `added` that the prefab doesn't have). Children of `live` in `added` are saved whole, at their index.
+     */
+    export function diffInstance(live: Json, base: Json, added: ReadonlySet<Json>): Pick<PrefabInstanceData, 'overrides' | 'removed' | 'added'>;
+    /** Prefab ids that data uses (instances anywhere in it), and the ones those prefabs use in turn. */
+    export function prefabDependencies(data: unknown, lib: PrefabLibrary, out?: Set<string>): Set<string>;
+}
+declare module "messier/engine/scene" {
+    import { type Mat4, type Quat, type Vec3 } from "messier/engine/math";
+    import { Transform } from "messier/engine/transform";
+    import { Component, type ComponentClass, type ComponentInit, type ComponentType } from "messier/engine/component";
+    import type { Mesh } from "messier/engine/mesh";
+    import type { Material } from "messier/engine/material";
+    import { Light } from "messier/engine/light";
+    import { CameraComponent } from "messier/engine/camera";
+    import { Behaviour } from "messier/engine/behaviours";
+    import { PhysicsWorld, RigidBody } from "messier/engine/physics";
+    import { ScriptLibrary } from "messier/engine/scripting";
+    import { Signal } from "messier/engine/signal";
+    import { Sky } from "messier/engine/sky";
+    import type { Json } from "messier/engine/data";
+    import type { PrefabLibrary } from "messier/engine/prefab";
+    /**
+     * A node in the scene graph: a name, a Transform (always exactly one), child objects and components.
+     * `mesh`, `material`, `light`, `camera` and `rigidBody` are shortcuts for the first component of that kind.
+     */
+    export class GameObject {
+        readonly id: number;
+        name: string;
+        readonly transform: Transform;
+        /** Child objects, in order. Change it through add()/remove() or transform.setParent(). */
+        readonly children: readonly GameObject[];
+        /**
+         * On the root of a prefab instance (or of an instance nested in one): the prefab's asset id. Scenes save an
+         * instance as this link plus how its objects differ from the prefab.
+         */
+        prefab: string | null;
+        /** In a prefab instance: the id of the prefab object this one is (see prefab.ts), or null. */
+        prefabNode: string | null;
+        /** An instance whose prefab didn't load: its saved data, written back as it was. */
+        _prefabStash: Json | null;
+        _scene: Scene | null;
+        /** In a scene, active in the hierarchy and not destroyed: its enabled components are live. */
+        _live: boolean;
+        private _activeSelf;
+        private _activeInHierarchy;
+        private _destroyed;
+        private readonly _components;
+        private _groups;
+        private _castShadows;
+        private _childAdded;
+        private _childRemoved;
+        private _destroyedSignal;
+        constructor(name?: string);
+        get parent(): GameObject | null;
+        /** Adds `child` at `index` (default: last), keeping its local transform. */
+        add(child: GameObject, index?: number): GameObject;
+        remove(child: GameObject): void;
+        isAncestorOf(other: GameObject): boolean;
+        /** The scene this object is in, or null when detached. */
+        get scene(): Scene | null;
+        traverse(fn: (obj: GameObject) => void | boolean): void;
+        /** A descendant by a path of child names: `find('Body/Weapon')`. Null if any step is missing. */
+        find(path: string): GameObject | null;
+        /** Emitted after a child is added (including reordering under the same parent). */
+        get childAdded(): Signal<[child: GameObject]>;
+        /** Emitted after a child is removed. */
+        get childRemoved(): Signal<[child: GameObject]>;
+        /** Emitted once when the object is destroyed. */
+        get destroyed(): Signal<[obj: GameObject]>;
+        /** The object's own active flag. Inactive objects and their descendants aren't drawn and their components don't run. */
+        get activeSelf(): boolean;
+        set activeSelf(v: boolean);
+        setActive(active: boolean): void;
+        /** Active itself and all its ancestors are active. */
+        get activeInHierarchy(): boolean;
+        /** Same as activeSelf (the editor's "Visible" checkbox and older scenes call it that). */
+        get visible(): boolean;
+        set visible(v: boolean);
+        /** True when this object and all its ancestors are visible (active). */
+        isVisibleInHierarchy(): boolean;
+        /** True from the moment the object is destroyed. */
+        get isDestroyed(): boolean;
+        /** Groups (tags) this object belongs to. */
+        get groups(): ReadonlySet<string>;
+        addToGroup(name: string): void;
+        removeFromGroup(name: string): void;
+        isInGroup(name: string): boolean;
+        /** Attached components in order (not including the transform). */
+        get components(): readonly Component[];
+        /** The attached behaviours (a new array each call). */
+        get behaviours(): Behaviour[];
+        /** Creates a component, applies `init` and attaches it. */
+        addComponent<T extends Component>(type: ComponentType<T>, init?: ComponentInit<T>): T;
+        /** Attaches an existing, detached component at `index` (default: last). */
+        attachComponent<T extends Component>(component: T, index?: number): T;
+        /** Detaches a component without destroying it, so it can be attached again (the editor's undo uses this). */
+        detachComponent(component: Component): boolean;
+        /** Destroys a component of this object. */
+        removeComponent(component: Component): void;
+        /** The first component that is an instance of `type` (subclasses included), or null. */
+        getComponent<T extends Component>(type: ComponentClass<T>): T | null;
+        /** Every component that is an instance of `type`, appended to `out`. */
+        getComponents<T extends Component>(type: ComponentClass<T>, out?: T[]): T[];
+        /** The first matching component on this object or a descendant (depth first), skipping inactive objects unless asked. */
+        getComponentInChildren<T extends Component>(type: ComponentClass<T>, includeInactive?: boolean): T | null;
+        /** The first matching component on this object or an ancestor. */
+        getComponentInParent<T extends Component>(type: ComponentClass<T>): T | null;
+        get mesh(): Mesh | null;
+        set mesh(m: Mesh | null);
+        get material(): Material | null;
+        set material(m: Material | null);
+        get castShadows(): boolean;
+        set castShadows(v: boolean);
+        get light(): Light | null;
+        set light(l: Light | null);
+        get camera(): CameraComponent | null;
+        set camera(c: CameraComponent | null);
+        get rigidBody(): RigidBody | null;
+        set rigidBody(rb: RigidBody | null);
+        private _meshRenderer;
+        private _replace;
+        /** World matrix (cached and always current; don't modify). */
+        get worldMatrix(): Mat4;
+        get normalMatrix(): Mat4;
+        /** A copy of the world matrix. */
+        computeWorldMatrix(): Mat4;
+        worldPosition(): Vec3;
+        worldRotation(): Quat;
+        /** Direction the object faces (local -Z) in world space. */
+        forward(): Vec3;
+        /** Sets the world-space position, converting into the parent's space. */
+        setWorldPosition(p: Vec3): void;
+        setWorldRotation(q: Quat): void;
+        /** Re-parents while keeping the current world transform. */
+        setParentKeepWorld(parent: GameObject, index?: number): void;
+        /**
+         * Deep copy of the object, its components (via Component.clone()) and descendants. Meshes and textures are shared;
+         * materials are copied. The copy is detached; see GameObject.instantiate().
+         */
+        clone(): GameObject;
+        /**
+         * Clones `original` into a scene: under `parent` (keeping the original's local transform) or, by default, at the
+         * top level of the original's scene where the original is in the world.
+         */
+        static instantiate(original: GameObject, parent?: GameObject): GameObject;
+        /**
+         * Destroys an object (with its descendants) or a single component. In a running scene this is deferred: the target
+         * is marked at once (it leaves Scene.query() and gets no further callbacks), and onDisable → onDestroy run and it is
+         * detached at the end of the frame (Scene.processDestroyed). Elsewhere it happens immediately.
+         */
+        static destroy(target: GameObject | Component): void;
+        /** Runs the destroy callbacks and detaches `target`. Called by destroy() or at the end of the frame. */
+        static _finishDestroy(target: GameObject | Component): void;
+        private _markDestroyed;
+        private _dispose;
+        /** Called by Transform.setParent after the hierarchy changed. */
+        _parentChanged(oldParent: GameObject | null): void;
+        /** Marks this object as the root of `scene`. */
+        _makeSceneRoot(scene: Scene): void;
+        /** Recomputes scene, activeInHierarchy and liveness for this subtree and syncs components whose state changed. */
+        private _refreshState;
+    }
+    /** Where a scene's prefabs come from: the project it was loaded from (ProjectResources). */
+    export interface PrefabSource extends PrefabLibrary {
+        /** A new, detached instance of a prefab by asset name, path under assets/ or id; null when there's no such prefab. */
+        instantiatePrefab(prefab: string, scene: Scene): GameObject | null;
+    }
+    export class Scene {
+        /** Invisible container; top-level objects are its children. */
+        readonly root: GameObject;
+        /** Linear RGB ambient light color, multiplied by ambientIntensity. Unused while the sky lights the scene. */
+        ambientColor: Vec3;
+        ambientIntensity: number;
+        /** Clear color (display space), shown when `sky.mode` is 'color'. */
+        background: Vec3;
+        /** Backdrop and, unless it's a flat color, environment lighting. */
+        readonly sky: Sky;
+        exposure: number;
+        /** Half extent (world units) of the directional shadow frustum. */
+        shadowExtent: number;
+        readonly physics: PhysicsWorld;
+        /** TypeScript behaviour scripts available to this scene's objects (shared with clones). */
+        readonly scripts: ScriptLibrary;
+        /** The project's prefabs, for instantiate() and for saving instances. Set by whoever loads the scene; shared with clones. */
+        prefabs: PrefabSource | null;
+        /** Emitted when a behaviour's hook throws (the behaviour is then paused). Without listeners the error is logged. */
+        readonly behaviourError: Signal<[behaviour: Behaviour, error: unknown, hook: string]>;
+        private readonly _registry;
+        private readonly _groups;
+        private _running;
+        private readonly _startQueue;
+        private readonly _updateList;
+        private readonly _fixedList;
+        private readonly _lateList;
+        private _dispatching;
+        private _holes;
+        private readonly _destroyQueue;
+        private readonly _clock;
+        constructor(scripts?: ScriptLibrary);
+        /**
+         * A copy to run (the editor plays a clone so Stop can throw it away): same settings and script library, every
+         * object cloned with GameObject.clone(). The copy isn't running.
+         */
+        clone(): Scene;
+        /**
+         * Adds an instance of a prefab of the project (by name, such as 'Enemy', or by its path under assets/) under
+         * `parent` (default: the top level), with the prefab's own transform. Returns it, or null (with a warning) when the
+         * project has no such prefab.
+         */
+        instantiate(prefab: string, parent?: GameObject): GameObject | null;
+        /** The top-level objects. */
+        get rootObjects(): readonly GameObject[];
+        add(obj: GameObject, parent?: GameObject): GameObject;
+        remove(obj: GameObject): void;
+        traverse(fn: (obj: GameObject) => void | boolean): void;
+        find(predicate: (obj: GameObject) => boolean): GameObject | null;
+        findByName(name: string): GameObject | null;
+        /**
+         * Live components of a class (subclasses included): enabled, on objects active in this scene. The array is kept up
+         * to date as components are added, removed, enabled and disabled, so don't modify it, and copy it if you change
+         * the scene while iterating.
+         */
+        query<T extends Component>(type: ComponentClass<T>): readonly T[];
+        /** Objects in this scene that are in group `name` (active or not), in the order they joined. */
+        getGroup(name: string): readonly GameObject[];
+        /** The camera the game renders through: the live camera with the highest priority (ties: the one listed first). */
+        activeCamera(): GameObject | null;
+        /** Brings every world matrix up to date in one top-down pass (world matrices are also correct when read lazily). */
+        updateMatrices(): void;
+        /** Whether behaviours run (Play). */
+        get running(): boolean;
+        /**
+         * Starts or stops running behaviours. Starting wakes every live behaviour (awake, then onEnable; start comes before
+         * its first update). Stopping runs onDisable and onDestroy and forgets lifecycle state, so the next start begins
+         * with awake again.
+         */
+        setRunning(running: boolean): void;
+        /** One fixed step: start pending behaviours, fixedUpdate, then physics. */
+        fixedUpdate(fixedDt: number): void;
+        /** Starts pending behaviours, then runs update(dt, time). */
+        updateBehaviours(dt: number, time: number): void;
+        lateUpdate(dt: number): void;
+        /** Finishes destroys requested during the frame (onDisable → onDestroy → detach). The engine calls it last. */
+        processDestroyed(): void;
+        /**
+         * Runs one whole frame with the scene's own fixed-step clock: when playing, fixed steps, update and lateUpdate;
+         * then world matrices and pending destroys. Handy for tools and tests; the engine drives the phases itself.
+         */
+        update(dt: number, time: number, playing: boolean): void;
+        _queueStart(b: Behaviour): void;
+        _queueDestroy(target: GameObject | Component): void;
+        _addToLists(b: Behaviour): void;
+        _removeFromLists(b: Behaviour): void;
+        private _removeFrom;
+        private _flushStarts;
+        private _dispatch;
+        private _compact;
+        _register(c: Component): void;
+        _unregister(c: Component): void;
+        _groupAdd(name: string, obj: GameObject): void;
+        _groupRemove(name: string, obj: GameObject): void;
+    }
+}
+declare module "messier/engine/component" {
+    import type { GameObject, Scene } from "messier/engine/scene";
+    import type { Transform } from "messier/engine/transform";
+    /** A concrete component class that addComponent() can construct. */
+    export type ComponentType<T extends Component> = new () => T;
+    /** Any component class, including abstract ones like Behaviour, for lookups and queries. */
+    export type ComponentClass<T extends Component> = abstract new (...args: never[]) => T;
+    type DataKeys<T> = {
+        [K in keyof T]: T[K] extends (...args: never[]) => unknown ? never : K;
+    }[keyof T];
+    /** Initial field values for addComponent(), applied before the component is attached (so before awake). */
+    export type ComponentInit<T> = Partial<Pick<T, DataKeys<T>>>;
+    /**
+     * Base class of everything attached to a GameObject (except its Transform). A component is *live* while it's
+     * enabled and its object is active in the hierarchy of a scene; live components are listed by Scene.query().
+     */
+    export abstract class Component {
+        private _gameObject;
+        private _enabled;
+        _registeredIn: Scene | null;
+        _destroyed: boolean;
+        /** The object this component is attached to. Throws before it's attached (e.g. in field initializers). */
+        get gameObject(): GameObject;
+        /** Whether the component is attached to an object. */
+        get attached(): boolean;
+        get transform(): Transform;
+        get enabled(): boolean;
+        set enabled(v: boolean);
+        /** Enabled, attached to an object that is active in a scene's hierarchy, and not destroyed. */
+        get isActiveAndEnabled(): boolean;
+        /** True from the moment the component (or its object) is destroyed. */
+        get isDestroyed(): boolean;
+        /**
+         * A detached copy for GameObject.clone()/instantiate(). The default constructs the same class and copies own
+         * enumerable fields that don't start with `_`: arrays and typed arrays one level deep (vectors), Signals as new
+         * empty signals (a copy has its own listeners), other objects shared. Override it when a component holds state
+         * that needs deeper copies.
+         */
+        clone(): Component;
+        /** Public fields only, so components can be logged and stringified (the owner link would be circular). */
+        toJSON(): Record<string, unknown>;
+        /** Called once when the destruction completes (after onDestroy for behaviours). */
+        _disposed(): void;
+        /** Called by GameObject when this component is attached to or detached from it. */
+        _setOwner(obj: GameObject | null): void;
+        /**
+         * Re-evaluates whether the component should be listed in its scene (and, for behaviours, which lifecycle callbacks
+         * are due). Called whenever enabled, the object's active state, its scene or the destroyed flag may have changed.
+         */
+        _sync(): void;
+    }
+}
+declare module "messier/engine/light" {
+    import { Component } from "messier/engine/component";
+    import type { Vec3 } from "messier/engine/math";
+    export type LightType = 'directional' | 'point' | 'spot';
+    export const LIGHT_TYPE_INDEX: Record<LightType, number>;
+    /** Fields saved with a scene. Keep in sync with clone(). */
+    export const LIGHT_FIELDS: readonly ["type", "color", "intensity", "range", "innerAngle", "outerAngle", "castShadows"];
+    /**
+     * Light component. Position and direction come from the owning GameObject:
+     * lights shine along the object's local -Z axis.
+     */
+    export class Light extends Component {
+        type: LightType;
+        /** Linear RGB. */
+        color: Vec3;
+        intensity: number;
+        /** Point / spot: distance at which the light fades to zero. */
+        range: number;
+        /** Spot: full-intensity cone half-angle in degrees. */
+        innerAngle: number;
+        /** Spot: cut-off cone half-angle in degrees. */
+        outerAngle: number;
+        /** Directional only: renders a shadow map (the first such light is used). */
+        castShadows: boolean;
+        constructor(type?: LightType, color?: Vec3, intensity?: number);
+        clone(): Light;
+    }
+}
+declare module "messier/engine/input" {
+    /** Built-in axes: WASD and the arrow keys. `vertical` is positive for W / Up. */
+    export type AxisName = 'horizontal' | 'vertical';
+    /**
+     * Keyboard state for scripts, by `KeyboardEvent.code` ('KeyW', 'ArrowUp',
+     * 'Space', 'ShiftLeft'…), so bindings don't move with the keyboard layout.
+     *
+     * The engine never listens to the DOM itself: the host (the editor, or a game
+     * page) forwards events with `keyDown`/`keyUp`, which lets it decide when the
+     * game has the keyboard. `Engine` calls `endFrame()` after each update, so
+     * `pressed`/`released` are true for exactly one update, even for a tap that
+     * went down and up between two frames.
+     */
+    export class InputState {
+        private readonly down;
+        private readonly pressedNow;
+        private readonly releasedNow;
+        /** True while any of the keys is held. */
+        isDown(...codes: string[]): boolean;
+        /** True on the update after any of the keys went down (key repeat doesn't count). */
+        pressed(...codes: string[]): boolean;
+        /** True on the update after any of the keys was let go. */
+        released(...codes: string[]): boolean;
+        /**
+         * -1, 0 or 1. Either a built-in axis (`'horizontal'`: A/D and ←/→,
+         * `'vertical'`: S/W and ↓/↑) or your own negative and positive key lists.
+         * Holding both sides gives 0.
+         */
+        axis(name: AxisName): number;
+        axis(negative: string[], positive: string[]): number;
+        /** Keys currently held, for debugging. */
+        get keys(): string[];
+        keyDown(code: string): void;
+        keyUp(code: string): void;
+        /** Forget everything, e.g. on window blur, where keyup events never arrive. */
+        reset(): void;
+        endFrame(): void;
+    }
+    /** The keyboard, shared by every script: `import { input } from 'messier'`. */
+    export const input: InputState;
+}
+declare module "messier/engine/primitives" {
+    import { Mesh } from "messier/engine/mesh";
+    export function createCube(size?: number): Mesh;
+    export function createSphere(radius?: number, segments?: number, rings?: number): Mesh;
+    export function createPlane(size?: number, subdivisions?: number): Mesh;
+    export function createCylinder(radius?: number, height?: number, segments?: number): Mesh;
+    export function createTorus(radius?: number, tube?: number, radialSegments?: number, tubularSegments?: number): Mesh;
+    export type PrimitiveKind = 'cube' | 'sphere' | 'plane' | 'cylinder' | 'torus';
+    /** Rebuilds a primitive from a saved `{ primitive, args }` ref, or null for an unknown kind. */
+    export function buildPrimitive(kind: string, args: number[]): Mesh | null;
+    /** Shared unit-sized primitive meshes for editor "Add" menus. */
+    export function getPrimitive(kind: PrimitiveKind): Mesh;
+}
+declare module "messier/engine/overlay" {
+    import { type Vec3, type Vec4 } from "messier/engine/math";
+    import type { Camera } from "messier/engine/camera";
+    /** Floats per overlay vertex: position(3) + color(4). */
+    export const OVERLAY_STRIDE_FLOATS = 7;
+    /**
+     * Immediate-mode builder for editor helper geometry. Lines are expanded on the
+     * CPU into camera-facing ribbons with a constant on-screen pixel width.
+     * `depth` geometry is occluded by the scene; `top` geometry is always visible.
+     */
+    export class OverlayBuilder {
+        readonly depth: number[];
+        readonly top: number[];
+        private camera;
+        private viewportHeight;
+        begin(camera: Camera, viewportHeight: number): void;
+        get isEmpty(): boolean;
+        pixelSize(p: Readonly<Vec3>): number;
+        triangle(a: Readonly<Vec3>, b: Readonly<Vec3>, c: Readonly<Vec3>, color: Readonly<Vec4>, onTop?: boolean): void;
+        /** Line segment with a constant on-screen width in pixels. */
+        line(a: Readonly<Vec3>, b: Readonly<Vec3>, color: Readonly<Vec4>, widthPx?: number, onTop?: boolean): void;
+        polyline(points: Readonly<Vec3>[], color: Readonly<Vec4>, widthPx?: number, onTop?: boolean, closed?: boolean): void;
+        /** Circle in the plane perpendicular to `normal`. */
+        circle(center: Readonly<Vec3>, normal: Readonly<Vec3>, radius: number, color: Readonly<Vec4>, widthPx?: number, onTop?: boolean, segments?: number): void;
+        cone(base: Readonly<Vec3>, tip: Readonly<Vec3>, radius: number, color: Readonly<Vec4>, onTop?: boolean, segments?: number): void;
+        /** Axis-aligned cube centered at `center`. */
+        cube(center: Readonly<Vec3>, half: number, color: Readonly<Vec4>, onTop?: boolean): void;
+        /** Small octahedron, used as a light icon. */
+        diamond(center: Readonly<Vec3>, radius: number, color: Readonly<Vec4>, onTop?: boolean): void;
+        /** Wireframe box from 8 corners ordered as produced by boxCorners(). */
+        wireBox(corners: Vec3[], color: Readonly<Vec4>, widthPx?: number, onTop?: boolean): void;
+    }
+    export function boxCorners(min: Readonly<Vec3>, max: Readonly<Vec3>): Vec3[];
+    export function circlePoints(center: Readonly<Vec3>, normal: Readonly<Vec3>, radius: number, segments: number): Vec3[];
+}
 declare module "messier/engine/raycast" {
     import { type Vec3 } from "messier/engine/math";
     import type { Ray } from "messier/engine/camera";
@@ -2080,101 +2308,15 @@ declare module "messier/engine/sceneManager" {
     /** Scene switching for scripts: `import { sceneManager } from 'messier'`. */
     export const sceneManager: SceneManager;
 }
-declare module "messier/engine/data" {
-    export type Json = Record<string, unknown>;
-    export function isObject(v: unknown): v is Json;
-    /** Copies `keys` from `src` onto `target` when the value has the same type as the target's current one (numbers must be finite). */
-    export function assignKnown<T extends object>(target: T, src: unknown, keys: readonly (keyof T & string)[]): T;
-    /** Plain-data copy of `keys` (arrays are copied). */
-    export function pickData<T extends object>(src: T, keys: readonly (keyof T & string)[]): Json;
-}
-declare module "messier/engine/serialize" {
-    import { GameObject, type Scene } from "messier/engine/scene";
-    import { type Texture } from "messier/engine/material";
-    import type { AudioClip, ClipRef } from "messier/engine/audioClip";
-    import type { Mesh, ResourceRef } from "messier/engine/mesh";
-    import { type Quat, type Vec3 } from "messier/engine/math";
-    import { type Json } from "messier/engine/data";
-    export const SCENE_FORMAT = "messier-scene";
-    export const SCENE_VERSION = 1;
-    export type BehaviourData = {
-        type: string;
-        enabled: boolean;
-        params: Record<string, number>;
-    } | {
-        script: string;
-        enabled: boolean;
-        overrides: Record<string, number>;
-    };
-    export interface ObjectData {
-        name: string;
-        position: Vec3;
-        rotation: Quat;
-        scale: Vec3;
-        visible: boolean;
-        castShadows: boolean;
-        mesh?: ResourceRef;
-        /** Material fields plus `texture` (a ref). */
-        material?: Json;
-        light?: Json;
-        camera?: Json;
-        rigidBody?: Json;
-        /** Shape2D fields plus `points` (flat x, y list). */
-        shape2d?: Json;
-        text2d?: Json;
-        /** AudioSource fields plus `clip` (a ClipRef). */
-        audioSource?: Json;
-        behaviours?: BehaviourData[];
-        children?: ObjectData[];
-    }
-    export interface SceneData {
-        format: typeof SCENE_FORMAT;
-        version: number;
-        /** Environment (ambient, background, exposure, shadow extent), `sky` (Sky fields plus `texture`, a ref) and `physics` ({ gravity, iterations }). */
-        settings: Json;
-        objects: ObjectData[];
-    }
-    /** Turns refs back into meshes and textures while a scene loads. */
-    export interface SceneResources {
-        mesh(ref: ResourceRef): Mesh | null;
-        texture(ref: ResourceRef): Texture | null;
-        /** Sound clips; without it, sources load without their clip (with a warning). */
-        clip?(ref: ClipRef): AudioClip | null;
-    }
-    export function isClipRef(v: unknown): v is ClipRef;
-    export function isResourceRef(v: unknown): v is ResourceRef;
-    /**
-     * Stamps `{ asset, index }` refs on the meshes and textures of a freshly loaded
-     * model, numbered in hierarchy order. Loaders are deterministic, so loading the
-     * same files again and tagging them gives the same numbering.
-     */
-    export function tagAssetResources(root: GameObject, asset: string): {
-        meshes: Mesh[];
-        textures: Texture[];
-    };
-    /** Snapshot of the scene as JSON-safe data. Problems (meshes built at runtime) are appended to `warnings`. */
-    export function serializeScene(scene: Scene, warnings?: string[]): SceneData;
-    /** Throws unless `data` looks like a scene this version can read. */
-    export function checkSceneData(data: unknown): asserts data is SceneData;
-    /**
-     * Replaces the scene's objects and settings with `data`. Scripts are looked up
-     * by name in `scene.scripts`, so load the project's scripts first. Missing
-     * resources, scripts and behaviour types are skipped and reported in `warnings`.
-     */
-    export function applySceneData(scene: Scene, data: unknown, resources: SceneResources, warnings?: string[]): void;
-    /** Asset ids a scene uses: its objects' (see collectAssetIds) and its sky image's. */
-    export function sceneAssetIds(data: SceneData, out?: Set<string>): Set<string>;
-    /** Asset ids referenced by meshes, textures and sound clips in `objects` (recursively). */
-    export function collectAssetIds(objects: unknown, out?: Set<string>): Set<string>;
-}
 declare module "messier/engine/project" {
     import type { Mesh, ResourceRef } from "messier/engine/mesh";
     import type { Texture } from "messier/engine/material";
-    import { Scene, type GameObject } from "messier/engine/scene";
+    import { Scene, type GameObject, type PrefabSource } from "messier/engine/scene";
     import type { ScriptLibrary } from "messier/engine/scripting";
     import { type MemoryFile } from "messier/engine/loaders/index";
     import { AudioClip, type ClipRef } from "messier/engine/audioClip";
     import { type SceneData, type SceneResources } from "messier/engine/serialize";
+    import { type PrefabData } from "messier/engine/prefab";
     export const PROJECT_FORMAT = "messier-project";
     export const PROJECT_VERSION = 1;
     /**
@@ -2254,8 +2396,16 @@ declare module "messier/engine/project" {
          * game ships. Scene data and asset files are shared, not copied.
          */
         subset(scenes: ProjectScene[]): Project;
-        /** Assets used by at least one scene, in project order. */
+        /** Assets used by at least one scene, and every prefab (scripts instantiate them by name), in project order. */
         referencedAssets(): Asset[];
+        /** Ids of the assets `scenes` use, every prefab, and what those prefabs use. */
+        usedAssetIds(scenes: readonly ProjectScene[]): Set<string>;
+        /** `ids` plus the assets the prefabs among them use, recursively (in place). */
+        withDependencies(ids: Set<string>): Set<string>;
+        /** The prefab of a prefab asset (null for other assets, and when the file can't be read). */
+        prefabData(id: string): PrefabData | null;
+        /** A prefab asset by id, name or path under assets/ (with or without the extension). */
+        findPrefab(key: string): Asset | null;
         /** The JSON part without file offsets. Cheap to compare for change detection. */
         manifest(): ProjectManifest;
         encode(): Uint8Array<ArrayBuffer>;
@@ -2267,18 +2417,22 @@ declare module "messier/engine/project" {
          */
         static fromManifest(json: unknown, fileBytes: (asset: AssetEntry, file: AssetEntry['files'][number]) => Uint8Array<ArrayBuffer> | null): Project;
     }
+    export const isPrefabAsset: (a: Asset) => boolean;
     /**
      * Resolves scene refs for one project: rebuilds primitives and synthesized
      * sounds, and loads each imported asset once, sharing its meshes, textures and
-     * clips across scene loads.
+     * clips across scene loads. Also the prefab source of the scenes it loads.
      */
-    export class ProjectResources implements SceneResources {
+    export class ProjectResources implements SceneResources, PrefabSource {
         readonly project: Project;
         private readonly assets;
         private readonly clips;
         private readonly primitives;
         constructor(project: Project);
-        /** Loads the assets `data` references that aren't loaded yet. Failures become warnings. */
+        /**
+         * Loads the assets `data` references that aren't loaded yet, and those of every prefab (a script may instantiate
+         * any of them). Failures become warnings.
+         */
         prepare(data: SceneData, warnings?: string[]): Promise<void>;
         /** Whether the asset was loaded (or tried and failed). */
         has(assetId: string): boolean;
@@ -2293,6 +2447,9 @@ declare module "messier/engine/project" {
         model(assetId: string): GameObject | null;
         /** A new Scene holding `entry`'s objects, with `scripts` as its library (load the project's scripts into it first). */
         instantiate(entry: ProjectScene, scripts: ScriptLibrary, warnings?: string[]): Promise<Scene>;
+        prefab(id: string): PrefabData | null;
+        /** A new instance of a prefab by name, path or id (prepare() loaded what it uses). Load problems are logged. */
+        instantiatePrefab(key: string, scene: Scene): GameObject | null;
         /** Makes meshes and textures of an asset imported in this session resolvable without reloading it. */
         register(assetId: string, resources: {
             meshes: Mesh[];
@@ -2419,7 +2576,7 @@ declare module "messier/engine/projectFolder" {
             modified: number;
         } | null>;
     }
-    export type AssetKind = 'model' | 'image' | 'sound' | 'other';
+    export type AssetKind = 'model' | 'image' | 'sound' | 'prefab' | 'other';
     export function assetKind(path: string): AssetKind;
     export const joinPath: (...parts: string[]) => string;
     export const dirName: (path: string) => string;
@@ -2538,6 +2695,7 @@ declare module "messier/engine/index" {
     export * from "messier/engine/sceneManager";
     export * from "messier/engine/loaders/index";
     export * from "messier/engine/serialize";
+    export * from "messier/engine/prefab";
     export * from "messier/engine/project";
     export * from "messier/engine/projectFolder";
 }
