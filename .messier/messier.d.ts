@@ -2078,6 +2078,114 @@ declare module "messier/engine/raycast" {
         max: Vec3;
     } | null;
 }
+declare module "messier/engine/frameGraph" {
+    /** A texture the graph allocates for the frame. Usage flags come from how passes use it. */
+    export interface TransientTextureDesc {
+        format: GPUTextureFormat;
+        /** Size in texels. Without it, the output size times `scale`. */
+        size?: [number, number];
+        /** Fraction of the output size (default 1), when `size` isn't given. */
+        scale?: number;
+        sampleCount?: number;
+        mipLevelCount?: number;
+    }
+    /** A texture of one frame's graph. Only valid in the frame it was made in. */
+    export class TextureHandle {
+        readonly name: string;
+        readonly _graph: FrameGraph;
+        readonly _frame: number;
+        readonly _index: number;
+        /** @internal */
+        constructor(name: string, _graph: FrameGraph, _frame: number, _index: number);
+    }
+    export interface ColorAttachment {
+        /** Default 'clear'; 'load' also counts as reading the texture. */
+        loadOp?: GPULoadOp;
+        clearValue?: GPUColor;
+        /** A single-sample texture the (multisampled) attachment resolves into. */
+        resolveTarget?: TextureHandle;
+    }
+    /** Depth only: the stencil aspect isn't handled yet. */
+    export interface DepthAttachment {
+        /** Default 'clear'; 'load' also counts as reading the texture. */
+        depthLoadOp?: GPULoadOp;
+        depthClearValue?: number;
+    }
+    /** The textures of the frame, for a pass's execute function. */
+    export interface FrameResources {
+        texture(handle: TextureHandle): GPUTexture;
+        /** A default view of the texture. */
+        view(handle: TextureHandle): GPUTextureView;
+    }
+    interface PassBuilderBase {
+        /** Samples the texture (a texture binding). */
+        read(handle: TextureHandle): void;
+        /** Never culled, even when nothing reads what it writes (it has effects outside the graph). */
+        sideEffect(): void;
+    }
+    export interface RenderPassBuilder extends PassBuilderBase {
+        colorAttachment(handle: TextureHandle, options?: ColorAttachment): void;
+        depthAttachment(handle: TextureHandle, options?: DepthAttachment): void;
+    }
+    export interface ComputePassBuilder extends PassBuilderBase {
+        /** Reads the texture as a storage texture. */
+        readStorage(handle: TextureHandle): void;
+        /** Writes the texture as a storage texture. */
+        writeStorage(handle: TextureHandle): void;
+    }
+    export type RenderPassExecute = (pass: GPURenderPassEncoder, resources: FrameResources) => void;
+    export type ComputePassExecute = (pass: GPUComputePassEncoder, resources: FrameResources) => void;
+    /** What compile() decided: the passes in execution order and the ones culled. */
+    export interface CompiledFrame {
+        passes: string[];
+        culled: string[];
+    }
+    export class FrameGraph {
+        private readonly device;
+        private outputSize;
+        private frame;
+        private resources;
+        private passes;
+        private readonly pool;
+        constructor(device: GPUDevice);
+        /** The size transient textures scale from (the canvas). Changing it frees every pooled texture. */
+        setOutputSize(width: number, height: number): void;
+        /** Pooled GPU textures (for tests and stats). */
+        get pooledTextures(): number;
+        /** A texture this frame's passes share, allocated from the pool. */
+        createTexture(name: string, desc: TransientTextureDesc): TextureHandle;
+        /** A texture owned elsewhere (the canvas texture, a persistent shadow map). The graph never allocates or frees it. */
+        importTexture(name: string, texture: GPUTexture): TextureHandle;
+        addRenderPass(name: string, setup: (builder: RenderPassBuilder) => RenderPassExecute): void;
+        addComputePass(name: string, setup: (builder: ComputePassBuilder) => ComputePassExecute): void;
+        /**
+         * Orders and culls this frame's passes. Throws when a pass reads a transient texture no pass writes, or when
+         * passes depend on each other in a cycle.
+         */
+        compile(): CompiledFrame;
+        private plan;
+        /** Compiles and records this frame's passes into one command encoder, submits it, and starts the next frame. */
+        execute(): CompiledFrame;
+        /** Frees every pooled texture. */
+        destroy(): void;
+        private addResource;
+        private resource;
+        private newPass;
+        private sample;
+        private attach;
+        /** Passes in execution order: dependencies first, declaration order otherwise. */
+        private order;
+        /** Passes whose results are used: the ones writing imported textures or marked sideEffect, and what they read. */
+        private alive;
+        private lifetimes;
+        private renderPassDescriptor;
+        private gpuTexture;
+        private resolvedSize;
+        private allocate;
+        private endFrame;
+        private releaseAll;
+    }
+}
 declare module "messier/engine/renderer" {
     import type { Scene } from "messier/engine/scene";
     import type { Camera } from "messier/engine/camera";
@@ -2108,7 +2216,9 @@ declare module "messier/engine/renderer" {
     }
     /**
      * Forward renderer: shadow pass (one directional light) followed by a 4x MSAA
-     * main pass containing lit meshes, the editor grid and overlay helpers.
+     * main pass containing lit meshes, the sky, the editor grid, 2D and overlay helpers.
+     * Each frame declares its passes on a FrameGraph, which orders them and owns
+     * their transient textures.
      */
     export class Renderer {
         readonly device: GPUDevice;
@@ -2119,8 +2229,8 @@ declare module "messier/engine/renderer" {
         height: number;
         readonly stats: RenderStats;
         private readonly context;
-        private msaaTexture;
-        private depthTexture;
+        /** Declares, orders and runs each frame's passes, and owns their transient textures (MSAA color, depth). */
+        private readonly graph;
         private readonly frameLayout;
         private readonly materialLayout;
         private readonly objectLayout;
@@ -2189,6 +2299,10 @@ declare module "messier/engine/renderer" {
         private computeShadowMatrix;
         /** Renders one frame. World matrices must be up to date (Scene.updateMatrices). */
         render(scene: Scene, camera: Camera, options?: RenderOptions): RenderStats;
+        /** The shadow pass: depth only, on its own group 0 (the frame group holds the shadow map it's drawing into). */
+        private drawShadowCasters;
+        /** The main pass: meshes, sky, grid, world 2D, depth-tested overlay, screen 2D (HUD), then the overlay on top. */
+        private drawMain;
     }
 }
 declare module "messier/engine/engine" {
