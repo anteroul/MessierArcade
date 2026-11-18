@@ -2215,10 +2215,9 @@ declare module "messier/engine/renderer" {
         elements2D: number;
     }
     /**
-     * Forward renderer: shadow pass (one directional light) followed by a 4x MSAA
-     * main pass containing lit meshes, the sky, the editor grid, 2D and overlay helpers.
-     * Each frame declares its passes on a FrameGraph, which orders them and owns
-     * their transient textures.
+     * Forward renderer: a shadow pass (one directional light), a 4x MSAA HDR main pass (lit meshes, the sky), a tonemap
+     * pass, then the display-space overlay pass (editor grid, 2D, overlay helpers) resolved into the canvas. Each frame
+     * declares its passes on a FrameGraph, which orders them and owns their transient textures.
      */
     export class Renderer {
         readonly device: GPUDevice;
@@ -2243,6 +2242,13 @@ declare module "messier/engine/renderer" {
         private readonly overlayTopPipeline;
         private readonly mipPipelines;
         private readonly skyPipeline;
+        private readonly tonemapPipeline;
+        private readonly tonemapLayout;
+        private readonly tonemapBuffer;
+        /** The HDR texture `tonemapGroup` reads (the graph's pool may hand out another one). */
+        private tonemapSource;
+        private tonemapGroup;
+        private readonly tonemapData;
         private readonly world2DPipeline;
         private readonly screen2DPipeline;
         private readonly frameBuffer;
@@ -2301,8 +2307,12 @@ declare module "messier/engine/renderer" {
         render(scene: Scene, camera: Camera, options?: RenderOptions): RenderStats;
         /** The shadow pass: depth only, on its own group 0 (the frame group holds the shadow map it's drawing into). */
         private drawShadowCasters;
-        /** The main pass: meshes, sky, grid, world 2D, depth-tested overlay, screen 2D (HUD), then the overlay on top. */
-        private drawMain;
+        /** The main pass: lit meshes, then the sky behind them, as linear radiance. */
+        private drawScene;
+        /** The tonemap pass: HDR radiance to display colors, per sample (see tonemap.wgsl). */
+        private drawTonemap;
+        /** The overlay pass, display space: grid, world 2D, depth-tested overlay, screen 2D (HUD), then the overlay on top. */
+        private drawDisplay;
     }
 }
 declare module "messier/engine/engine" {
