@@ -1,4 +1,4 @@
-// Messier 0.5.0: types of the 'messier' module scripts import from. Written by the Messier editor; it's
+// Messier 0.6.0: types of the 'messier' module scripts import from. Written by the Messier editor; it's
 // replaced when the project opens in a different version, so don't edit it.
 
 declare module "messier/engine/math" {
@@ -2111,11 +2111,19 @@ declare module "messier/engine/frameGraph" {
         depthLoadOp?: GPULoadOp;
         depthClearValue?: number;
     }
+    /** Formats and sample count of a render pass's attachments, for choosing pipelines that match them. */
+    export interface RenderTarget {
+        colorFormats: GPUTextureFormat[];
+        depthFormat: GPUTextureFormat | null;
+        sampleCount: number;
+    }
     /** The textures of the frame, for a pass's execute function. */
     export interface FrameResources {
         texture(handle: TextureHandle): GPUTexture;
         /** A default view of the texture. */
         view(handle: TextureHandle): GPUTextureView;
+        /** The pass's attachments (render passes; null in compute passes). */
+        readonly target: RenderTarget | null;
     }
     interface PassBuilderBase {
         /** Samples the texture (a texture binding). */
@@ -2179,6 +2187,7 @@ declare module "messier/engine/frameGraph" {
         private alive;
         private lifetimes;
         private renderPassDescriptor;
+        private renderTarget;
         private gpuTexture;
         private resolvedSize;
         private allocate;
