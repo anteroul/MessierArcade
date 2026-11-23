@@ -870,6 +870,71 @@ declare module "messier/engine/sky" {
         get effectiveMode(): SkyMode;
     }
 }
+declare module "messier/engine/profiler" {
+    /** Frames of frame-time history kept for the graph. */
+    export const PROFILER_HISTORY = 120;
+    /** One section of the last finished frame. Sections come in tree order: a parent, then its children (depth + 1). */
+    export interface ProfileSection {
+        name: string;
+        depth: number;
+        /** Milliseconds spent in the section during the frame, all of its runs together. */
+        ms: number;
+        /** Smoothed `ms`. */
+        avg: number;
+        /** Times it ran during the frame (fixed steps run several times, or not at all). */
+        calls: number;
+    }
+    /** GPU time of one frame graph pass. */
+    export interface GpuPassTime {
+        name: string;
+        ms: number;
+        avg: number;
+    }
+    export class Profiler {
+        /** Record sections and GPU pass times. While off, nothing is measured and the results keep their last values. */
+        enabled: boolean;
+        /** The clock, in milliseconds. Replaceable for tests. */
+        now: () => number;
+        /** Time from the previous frame to the last finished one, in milliseconds. */
+        frameMs: number;
+        avgFrameMs: number;
+        /** Time the engine spent on the last finished frame (the top-level sections together). */
+        cpuMs: number;
+        avgCpuMs: number;
+        /** Frames finished while enabled. */
+        frames: number;
+        /** The last PROFILER_HISTORY frame times, a ring: `historyIndex` is the oldest entry (the next one written). */
+        readonly history: Float32Array<ArrayBuffer>;
+        historyIndex: number;
+        /** The last finished frame's sections, in tree order. */
+        sections: ProfileSection[];
+        /** Whether the device can time passes (the `timestamp-query` feature). The renderer sets it. */
+        gpuSupported: boolean;
+        /** GPU time per frame graph pass, in execution order. A few frames behind: the results are read back asynchronously. */
+        gpu: GpuPassTime[];
+        /** The passes of `gpu` together. */
+        gpuMs: number;
+        avgGpuMs: number;
+        private readonly root;
+        private readonly stack;
+        private readonly gpuAvg;
+        /** Opens a section inside the one that's open (or at the top level). Close it with end(). */
+        begin(name: string): void;
+        /** Closes the section opened last. */
+        end(): void;
+        /** Times `fn` as a section. */
+        measure<T>(name: string, fn: () => T): T;
+        /** Publishes the frame's sections and starts the next frame. `frameMs` is the time since the previous frame. */
+        endFrame(frameMs: number): void;
+        /** GPU pass times of one frame, as the renderer's timer reads them back. */
+        setGpuTimes(names: readonly string[], ms: readonly number[]): void;
+        /** Forgets everything measured so far. */
+        reset(): void;
+        private publish;
+    }
+    /** The engine's profiler. Engine.step and the renderer report to it; add your own sections with begin()/end(). */
+    export const profiler: Profiler;
+}
 declare module "messier/engine/data" {
     export type Json = Record<string, unknown>;
     export function isObject(v: unknown): v is Json;
@@ -2143,6 +2208,17 @@ declare module "messier/engine/frameGraph" {
     }
     export type RenderPassExecute = (pass: GPURenderPassEncoder, resources: FrameResources) => void;
     export type ComputePassExecute = (pass: GPUComputePassEncoder, resources: FrameResources) => void;
+    /**
+     * Times passes on the GPU (see GpuTimer). The graph asks it for each pass's timestamp writes, lets it resolve them
+     * at the end of the encoder, and tells it when the frame was submitted.
+     */
+    export interface PassTimer {
+        begin(): void;
+        /** Where the pass writes its begin and end timestamps, or undefined to leave it untimed. */
+        timestampWrites(pass: string): GPURenderPassTimestampWrites | undefined;
+        resolve(encoder: GPUCommandEncoder): void;
+        submitted(): void;
+    }
     /** What compile() decided: the passes in execution order and the ones culled. */
     export interface CompiledFrame {
         passes: string[];
@@ -2150,6 +2226,8 @@ declare module "messier/engine/frameGraph" {
     }
     export class FrameGraph {
         private readonly device;
+        /** Times each executed pass on the GPU while set (the device needs `timestamp-query`). */
+        timer: PassTimer | null;
         private outputSize;
         private frame;
         private resources;
@@ -2193,6 +2271,31 @@ declare module "messier/engine/frameGraph" {
         private allocate;
         private endFrame;
         private releaseAll;
+    }
+}
+declare module "messier/engine/gpuTimer" {
+    import type { PassTimer } from "messier/engine/frameGraph";
+    export class GpuTimer implements PassTimer {
+        private readonly device;
+        /** Passes timed per frame; later ones go untimed. */
+        readonly maxPasses: number;
+        /** Called with a frame's pass names (execution order) and their GPU times in milliseconds. */
+        onResults: ((names: string[], ms: number[]) => void) | null;
+        private readonly querySet;
+        private readonly resolveBuffer;
+        private readonly free;
+        private readbacks;
+        private names;
+        private target;
+        private destroyed;
+        constructor(device: GPUDevice, 
+        /** Passes timed per frame; later ones go untimed. */
+        maxPasses?: number);
+        begin(): void;
+        timestampWrites(pass: string): GPURenderPassTimestampWrites | undefined;
+        resolve(encoder: GPUCommandEncoder): void;
+        submitted(): void;
+        destroy(): void;
     }
 }
 declare module "messier/engine/pipelines" {
@@ -2313,6 +2416,8 @@ declare module "messier/engine/renderer" {
         private readonly context;
         /** Declares, orders and runs each frame's passes, and owns their transient textures (MSAA color, depth). */
         private readonly graph;
+        /** Times the graph's passes for the profiler; null when the device has no `timestamp-query`. */
+        private readonly gpuTimer;
         private readonly frameLayout;
         private readonly materialLayout;
         private readonly objectLayout;
@@ -2470,6 +2575,7 @@ declare module "messier/engine/engine" {
         setPlaying(playing: boolean): void;
         start(): void;
         stop(): void;
+        /** `frameMs`: the real time since the previous frame (`dt` is capped), for the profiler. */
         private step;
         private render;
     }
@@ -2909,6 +3015,7 @@ declare module "messier/engine/index" {
     export * from "messier/engine/shapes2d";
     export * from "messier/engine/raycast";
     export * from "messier/engine/renderer";
+    export * from "messier/engine/profiler";
     export * from "messier/engine/engine";
     export * from "messier/engine/sceneManager";
     export * from "messier/engine/loaders/index";
