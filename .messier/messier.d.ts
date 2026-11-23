@@ -199,6 +199,13 @@ declare module "messier/engine/material" {
         constructor(name?: string, init?: Partial<Pick<Material, 'baseColor' | 'metallic' | 'roughness' | 'emissive' | 'emissiveStrength' | 'unlit' | 'doubleSided'>>);
         clone(): Material;
     }
+    /**
+     * A number that's equal for materials that draw the same (see materialsEqual). Different materials can collide, so
+     * confirm a match with materialsEqual.
+     */
+    export function materialHash(m: Material): number;
+    /** Whether two materials draw the same: every field but the name, and the same textures. The renderer batches these. */
+    export function materialsEqual(a: Material, b: Material): boolean;
 }
 declare module "messier/engine/transform" {
     import { type Mat4, type Quat, type Vec3 } from "messier/engine/math";
@@ -2273,6 +2280,67 @@ declare module "messier/engine/frameGraph" {
         private releaseAll;
     }
 }
+declare module "messier/engine/culling" {
+    import type { Mat4, Vec3 } from "messier/engine/math";
+    /** Six planes, four floats each (a, b, c, d): a point is inside when a·x + b·y + c·z + d ≥ 0 for all of them. */
+    export type FrustumPlanes = Float32Array;
+    /**
+     * The world-space planes of `viewProj`'s visible volume: left, right, bottom, top, then the two depth planes. Not
+     * normalized (boxOutsideFrustum doesn't need it).
+     */
+    export function frustumPlanes(viewProj: Readonly<Mat4>, out?: FrustumPlanes): FrustumPlanes;
+    /**
+     * Whether the box `min`…`max`, transformed by `world`, lies entirely outside one of the planes. Conservative the
+     * usual way: a box near a corner of the frustum can pass while being outside, never the other way around.
+     */
+    export function boxOutsideFrustum(planes: FrustumPlanes, world: Readonly<Mat4>, min: Readonly<Vec3>, max: Readonly<Vec3>): boolean;
+}
+declare module "messier/engine/batching" {
+    import type { Mat4 } from "messier/engine/math";
+    import type { Mesh } from "messier/engine/mesh";
+    import { type Material } from "messier/engine/material";
+    import type { MeshRenderer } from "messier/engine/meshRenderer";
+    /** Floats per instance: the Object struct of meshData.wgsl (model, normal matrix). */
+    export const OBJECT_FLOATS = 32;
+    /** One instanced draw. */
+    export interface MeshBatch {
+        mesh: Mesh;
+        /** The material every instance is drawn with (the first of the look-alikes). */
+        material: Material;
+        /** Index of the first instance in the object array. */
+        first: number;
+        count: number;
+    }
+    export class DrawList {
+        /** Main pass batches, in order of first appearance. */
+        readonly main: MeshBatch[];
+        readonly shadow: MeshBatch[];
+        /** Instance data for both passes, OBJECT_FLOATS each. Grows as needed; `objectCount` instances are valid. */
+        objects: Float32Array<ArrayBuffer>;
+        objectCount: number;
+        /** Instances in the main and the shadow batches. */
+        mainInstances: number;
+        shadowInstances: number;
+        /** Renderers left out of the main pass because they're outside the view. */
+        culled: number;
+        /** The distinct materials of the batches (the ones that need their uniforms uploaded). */
+        readonly materials: Set<Material>;
+        private readonly viewPlanes;
+        private readonly lightPlanes;
+        private readonly canonical;
+        private readonly buckets;
+        private readonly byMesh;
+        /**
+         * Builds the batches for `renderers` (each with a mesh and a material). `lightViewProj` is the shadow map's
+         * matrix, or null when nothing casts shadows. With `cull` off every renderer is drawn.
+         */
+        build(renderers: readonly MeshRenderer[], viewProj: Readonly<Mat4>, lightViewProj: Readonly<Mat4> | null, cull?: boolean): void;
+        private add;
+        /** Writes the batches' instances into the object array and publishes them. */
+        private emit;
+        private reserve;
+    }
+}
 declare module "messier/engine/gpuTimer" {
     import type { PassTimer } from "messier/engine/frameGraph";
     export class GpuTimer implements PassTimer {
@@ -2391,9 +2459,15 @@ declare module "messier/engine/renderer" {
         screen2D?: boolean;
     }
     export interface RenderStats {
+        /** Draw calls of the main and overlay passes (a batch of instances is one). */
         drawCalls: number;
         triangles: number;
+        /** Mesh instances drawn in the main pass. */
+        instances: number;
+        /** Mesh renderers skipped because they're outside the view. */
+        culled: number;
         lights: number;
+        /** Mesh instances drawn into the shadow map. */
         shadowCasters: number;
         /** Shape2D/Text2D components drawn. */
         elements2D: number;
@@ -2413,6 +2487,8 @@ declare module "messier/engine/renderer" {
         width: number;
         height: number;
         readonly stats: RenderStats;
+        /** Skip meshes outside the camera's view (and, in the shadow pass, outside the shadow map). */
+        frustumCulling: boolean;
         private readonly context;
         /** Declares, orders and runs each frame's passes, and owns their transient textures (MSAA color, depth). */
         private readonly graph;
@@ -2455,7 +2531,7 @@ declare module "messier/engine/renderer" {
         private objectBuffer;
         private objectBindGroup;
         private objectCapacity;
-        private objectStaging;
+        private readonly drawList;
         private overlayBuffer;
         private overlayCapacity;
         private readonly atlasTexture;
@@ -3016,6 +3092,8 @@ declare module "messier/engine/index" {
     export * from "messier/engine/raycast";
     export * from "messier/engine/renderer";
     export * from "messier/engine/profiler";
+    export * from "messier/engine/culling";
+    export * from "messier/engine/batching";
     export * from "messier/engine/engine";
     export * from "messier/engine/sceneManager";
     export * from "messier/engine/loaders/index";
