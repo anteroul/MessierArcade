@@ -209,7 +209,8 @@
         "occlusionStrength": 1,
         "alphaCutoff": 0,
         "doubleSided": false,
-        "unlit": false
+        "unlit": false,
+        "blend": "opaque"
       },
       "rigidBody": {
         "type": "static",
@@ -310,7 +311,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "static",
@@ -390,7 +392,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "static",
@@ -470,7 +473,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "static",
@@ -550,7 +554,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "static",
@@ -630,7 +635,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "static",
@@ -710,7 +716,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "static",
@@ -794,7 +801,8 @@
         "occlusionStrength": 1,
         "alphaCutoff": 0,
         "doubleSided": false,
-        "unlit": false
+        "unlit": false,
+        "blend": "opaque"
       },
       "rigidBody": {
         "type": "dynamic",
@@ -932,7 +940,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "kinematic",
@@ -1022,7 +1031,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "rigidBody": {
             "type": "kinematic",
@@ -1165,7 +1175,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           },
           "behaviours": [
             {
@@ -1221,7 +1232,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": true
+            "unlit": true,
+            "blend": "opaque"
           },
           "behaviours": [
             {
@@ -1309,7 +1321,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1360,7 +1373,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1411,7 +1425,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1462,7 +1477,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1513,7 +1529,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1564,7 +1581,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1615,7 +1633,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1666,7 +1685,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1717,7 +1737,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         },
         {
@@ -1768,7 +1789,8 @@
             "occlusionStrength": 1,
             "alphaCutoff": 0,
             "doubleSided": false,
-            "unlit": false
+            "unlit": false,
+            "blend": "opaque"
           }
         }
       ]

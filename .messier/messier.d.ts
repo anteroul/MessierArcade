@@ -166,8 +166,15 @@ declare module "messier/engine/material" {
     export type TextureSlot = (typeof TEXTURE_SLOTS)[number];
     /** Slots whose textures hold data rather than colors, so they're sampled without sRGB decoding. */
     export const LINEAR_TEXTURE_SLOTS: ReadonlySet<TextureSlot>;
+    /**
+     * How a material's pixels meet what's behind them. `opaque` covers it (with `alphaCutoff`, in a cut-out). `alpha`
+     * mixes by the base color's alpha (glass, smoke); `additive` adds on top, scaled by alpha (fire, beams). Blended
+     * materials are drawn after everything opaque, sorted back to front, don't write depth and cast no shadows.
+     */
+    export type BlendMode = 'opaque' | 'alpha' | 'additive';
+    export const BLEND_MODES: readonly BlendMode[];
     /** Fields saved with a scene (textures are saved separately, as refs). Keep in sync with clone(). */
-    export const MATERIAL_FIELDS: readonly ["name", "baseColor", "metallic", "roughness", "emissive", "emissiveStrength", "normalScale", "occlusionStrength", "alphaCutoff", "doubleSided", "unlit"];
+    export const MATERIAL_FIELDS: readonly ["name", "baseColor", "metallic", "roughness", "emissive", "emissiveStrength", "normalScale", "occlusionStrength", "alphaCutoff", "doubleSided", "unlit", "blend"];
     /** Metallic-roughness PBR material (glTF 2.0 compatible subset). All colors are linear. */
     export class Material {
         name: string;
@@ -195,8 +202,10 @@ declare module "messier/engine/material" {
         doubleSided: boolean;
         /** Skips lighting entirely; outputs base color + emissive. */
         unlit: boolean;
+        /** See BlendMode. Anything but `opaque` makes the base color's alpha the opacity. */
+        blend: BlendMode;
         gpu: MaterialGPU | null;
-        constructor(name?: string, init?: Partial<Pick<Material, 'baseColor' | 'metallic' | 'roughness' | 'emissive' | 'emissiveStrength' | 'unlit' | 'doubleSided'>>);
+        constructor(name?: string, init?: Partial<Pick<Material, 'baseColor' | 'metallic' | 'roughness' | 'emissive' | 'emissiveStrength' | 'unlit' | 'doubleSided' | 'blend'>>);
         clone(): Material;
     }
     /**
@@ -2296,7 +2305,7 @@ declare module "messier/engine/culling" {
     export function boxOutsideFrustum(planes: FrustumPlanes, world: Readonly<Mat4>, min: Readonly<Vec3>, max: Readonly<Vec3>): boolean;
 }
 declare module "messier/engine/batching" {
-    import type { Mat4 } from "messier/engine/math";
+    import type { Mat4, Vec3 } from "messier/engine/math";
     import type { Mesh } from "messier/engine/mesh";
     import { type Material } from "messier/engine/material";
     import type { MeshRenderer } from "messier/engine/meshRenderer";
@@ -2312,13 +2321,16 @@ declare module "messier/engine/batching" {
         count: number;
     }
     export class DrawList {
-        /** Main pass batches, in order of first appearance. */
+        /** The camera's opaque batches, in order of first appearance. */
         readonly main: MeshBatch[];
-        readonly shadow: MeshBatch[];
-        /** Instance data for both passes, OBJECT_FLOATS each. Grows as needed; `objectCount` instances are valid. */
+        /** The camera's blended batches, back to front: draw them in this order, after `main`. */
+        readonly transparent: MeshBatch[];
+        /** The casters of each shadow view, in the order the views were given. */
+        readonly shadows: MeshBatch[][];
+        /** Instance data for every view, OBJECT_FLOATS each. Grows as needed; `objectCount` instances are valid. */
         objects: Float32Array<ArrayBuffer>;
         objectCount: number;
-        /** Instances in the main and the shadow batches. */
+        /** Instances the camera draws (opaque and blended), and the ones of all the shadow views. */
         mainInstances: number;
         shadowInstances: number;
         /** Renderers left out of the main pass because they're outside the view. */
@@ -2327,14 +2339,16 @@ declare module "messier/engine/batching" {
         readonly materials: Set<Material>;
         private readonly viewPlanes;
         private readonly lightPlanes;
+        private readonly sorted;
         private readonly canonical;
         private readonly buckets;
         private readonly byMesh;
         /**
-         * Builds the batches for `renderers` (each with a mesh and a material). `lightViewProj` is the shadow map's
-         * matrix, or null when nothing casts shadows. With `cull` off every renderer is drawn.
+         * Builds the batches for `renderers` (each with a mesh and a material), seen from `eye` through `viewProj`.
+         * `shadowViews` are the view-projection matrices shadow maps are drawn with. With `cull` off every renderer is
+         * drawn in every view.
          */
-        build(renderers: readonly MeshRenderer[], viewProj: Readonly<Mat4>, lightViewProj: Readonly<Mat4> | null, cull?: boolean): void;
+        build(renderers: readonly MeshRenderer[], viewProj: Readonly<Mat4>, eye: Readonly<Vec3>, shadowViews?: readonly Readonly<Mat4>[], cull?: boolean): void;
         private add;
         /** Writes the batches' instances into the object array and publishes them. */
         private emit;
@@ -2367,7 +2381,7 @@ declare module "messier/engine/gpuTimer" {
     }
 }
 declare module "messier/engine/pipelines" {
-    import type { Material } from "messier/engine/material";
+    import { type BlendMode, type Material } from "messier/engine/material";
     import type { Mesh } from "messier/engine/mesh";
     import type { RenderTarget } from "messier/engine/frameGraph";
     export type MeshPass = 'main' | 'shadow';
@@ -2377,6 +2391,8 @@ declare module "messier/engine/pipelines" {
         cull: GPUCullMode;
         /** Discard below the material's alpha cutoff. Only the shadow pass uses it; the main pass branches at runtime. */
         alphaTest: boolean;
+        /** Main pass: how the color is blended in. Blended variants test depth without writing it. */
+        blend: BlendMode;
         /** Null for depth-only passes. */
         colorFormat: GPUTextureFormat | null;
         sampleCount: number;
@@ -2389,7 +2405,7 @@ declare module "messier/engine/pipelines" {
      * The pipeline key for drawing `mesh` with `material` in `pass` into `target`. The only place that decides mesh
      * pipelines: draw loops, prewarming and tests all go through it.
      */
-    export function meshVariantKey(pass: MeshPass, material: Pick<Material, 'doubleSided' | 'alphaCutoff'>, _mesh: Mesh | null, target: RenderTarget): MeshVariantKey;
+    export function meshVariantKey(pass: MeshPass, material: Pick<Material, 'doubleSided' | 'alphaCutoff' | 'blend'>, _mesh: Mesh | null, target: RenderTarget): MeshVariantKey;
     /** Every valid key for these targets: the variants a project can need. Tests build them all. */
     export function allMeshVariantKeys(targets: Record<MeshPass, RenderTarget>): MeshVariantKey[];
     /** What the variants are made of: the WGSL pieces and the bind group layouts the renderer owns. */
@@ -2582,7 +2598,7 @@ declare module "messier/engine/renderer" {
          * alpha-tested variant reads the material from group 2.
          */
         private drawShadowCasters;
-        /** The main pass: lit meshes, then the sky behind them, as linear radiance. */
+        /** The main pass, as linear radiance: opaque meshes, the sky behind them, then blended meshes back to front. */
         private drawScene;
         /** The tonemap pass: HDR radiance to display colors, per sample (see tonemap.wgsl). */
         private drawTonemap;
