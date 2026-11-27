@@ -1705,7 +1705,7 @@
         "range": 14,
         "innerAngle": 14,
         "outerAngle": 24,
-        "castShadows": false
+        "castShadows": true
       }
     },
     {

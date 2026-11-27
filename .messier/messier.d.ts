@@ -2032,7 +2032,10 @@ declare module "messier/engine/light" {
         innerAngle: number;
         /** Spot: cut-off cone half-angle in degrees. */
         outerAngle: number;
-        /** Directional only: renders cascaded shadow maps (the first such light is used; see Scene.shadowDistance). */
+        /**
+         * Renders a shadow map. Directional: cascades out to Scene.shadowDistance (the first such light only). Point and
+         * spot: a shadow map of their own, while there's room (twelve spot lights or two point lights, nearest first).
+         */
         castShadows: boolean;
         constructor(type?: LightType, color?: Vec3, intensity?: number);
         clone(): Light;
@@ -2311,6 +2314,8 @@ declare module "messier/engine/culling" {
      * usual way: a box near a corner of the frustum can pass while being outside, never the other way around.
      */
     export function boxOutsideFrustum(planes: FrustumPlanes, world: Readonly<Mat4>, min: Readonly<Vec3>, max: Readonly<Vec3>): boolean;
+    /** Whether the sphere at `center` with `radius` lies entirely outside one of the planes. */
+    export function sphereOutsideFrustum(planes: FrustumPlanes, center: Readonly<Vec3>, radius: number): boolean;
 }
 declare module "messier/engine/batching" {
     import type { Mat4, Vec3 } from "messier/engine/math";
@@ -2391,6 +2396,7 @@ declare module "messier/engine/gpuTimer" {
 declare module "messier/engine/shadows" {
     import { type Mat4, type Vec3 } from "messier/engine/math";
     import type { Camera } from "messier/engine/camera";
+    import { type FrustumPlanes } from "messier/engine/culling";
     /** Layers of the shadow map: the most cascades a scene can ask for. */
     export const MAX_SHADOW_CASCADES = 4;
     export interface ShadowCascade {
@@ -2410,6 +2416,32 @@ declare module "messier/engine/shadows" {
      * camera, on a `mapSize` texel square per cascade.
      */
     export function computeCascades(camera: Camera, lightDir: Readonly<Vec3>, distance: number, count: number, mapSize: number): ShadowCascade[];
+    /** Layers of the point and spot light shadow map: two point lights, or twelve spot lights. */
+    export const MAX_LOCAL_SHADOW_LAYERS = 12;
+    export interface LocalShadowLight {
+        type: 'point' | 'spot';
+        position: Readonly<Vec3>;
+        /** Where a spot light points (unit length). */
+        direction: Readonly<Vec3>;
+        range: number;
+        /** Spot: the cone's half-angle in degrees. */
+        outerAngle: number;
+    }
+    export interface LocalShadow {
+        /** The first of its layers (a spot light has one, a point light six, one per face in CUBE_FACES order). */
+        layer: number;
+        /** World to each layer's clip space (normal Z). */
+        views: Mat4[];
+        /** A shadow-map texel's world size per unit of distance from the light, for scaling the bias. */
+        texelPerDistance: number;
+    }
+    /** The views of one light's shadow on `mapSize` texel squares, starting at `layer`. */
+    export function localShadowViews(light: LocalShadowLight, layer: number, mapSize: number): LocalShadow;
+    /**
+     * Hands out the `maxLayers` layers to `lights` (null: not casting shadows): lights whose range is inside the view
+     * (`viewPlanes`) first, nearest to `eye` first. Returns each light's shadow, or null.
+     */
+    export function assignLocalShadows(lights: readonly (LocalShadowLight | null)[], eye: Readonly<Vec3>, viewPlanes: FrustumPlanes, maxLayers: number, mapSize: number): (LocalShadow | null)[];
 }
 declare module "messier/engine/pipelines" {
     import { type BlendMode, type Material } from "messier/engine/material";
@@ -2522,9 +2554,10 @@ declare module "messier/engine/renderer" {
         pipelineBuilds: number;
     }
     /**
-     * Forward renderer: shadow passes (a cascade each, for one directional light), a 4x MSAA HDR main pass (lit meshes, the sky), a tonemap
-     * pass, then the display-space overlay pass (editor grid, 2D, overlay helpers) resolved into the canvas. Each frame
-     * declares its passes on a FrameGraph, which orders them and owns their transient textures.
+     * Forward renderer: shadow passes (a cascade each for one directional light, a layer each for point and spot
+     * lights), a 4x MSAA HDR main pass (lit meshes, the sky), a tonemap pass, then the display-space overlay pass (editor
+     * grid, 2D, overlay helpers) resolved into the canvas. Each frame declares its passes on a FrameGraph, which orders
+     * them and owns their transient textures.
      */
     export class Renderer {
         readonly device: GPUDevice;
@@ -2566,12 +2599,19 @@ declare module "messier/engine/renderer" {
         private readonly shadowFrameBuffer;
         private readonly shadowMap;
         private readonly shadowMapView;
+        /** Point and spot light shadows: a layer per spot light, six per point light (see shadows.ts). */
+        private readonly localShadowMap;
+        private readonly localShadowMapView;
+        /** Each local shadow layer's matrix, for the main pass. */
+        private readonly localShadowBuffer;
+        private readonly localShadowData;
+        private readonly viewPlanes;
         private frameBindGroup;
         /** The sky texture `frameBindGroup` was made with (null: the white placeholder). */
         private frameSky;
         private readonly shadowSampler;
         private readonly skySampler;
-        /** One per cascade: its light matrix. */
+        /** One per shadow view (SHADOW_SLOTS): its matrix. */
         private readonly shadowFrameBindGroups;
         private readonly textureSampler;
         private readonly mipSampler;
@@ -2625,8 +2665,9 @@ declare module "messier/engine/renderer" {
          */
         prewarm(scene: Scene): Promise<void>;
         /**
-         * The shadow pass: depth only, on its own group 0 (the frame group holds the shadow map it's drawing into). The
-         * alpha-tested variant reads the material from group 2.
+         * A shadow pass (one view: a cascade or a point/spot light layer): depth only, on its own group 0 (the frame group
+         * holds the shadow map it's drawing into), the view's matrix at `slot`. The alpha-tested variant reads the material
+         * from group 2.
          */
         private drawShadowCasters;
         /** The main pass, as linear radiance: opaque meshes, the sky behind them, then blended meshes back to front. */
