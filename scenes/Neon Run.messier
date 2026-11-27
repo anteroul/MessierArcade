@@ -1,6 +1,6 @@
 {
   "format": "messier-scene",
-  "version": 2,
+  "version": 3,
   "settings": {
     "ambientColor": [
       0.55,
@@ -14,7 +14,8 @@
       0.075
     ],
     "exposure": 1,
-    "shadowExtent": 22,
+    "shadowDistance": 66,
+    "shadowCascades": 4,
     "sky": {
       "mode": "color",
       "top": [

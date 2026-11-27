@@ -388,7 +388,7 @@ declare module "messier/engine/camera" {
         clone(): CameraComponent;
         /**
          * Points `view` through this camera, placed by its owner's world matrix.
-         * `target` is put `focusDistance` ahead (the renderer centers the shadow map on it).
+         * `target` is put `focusDistance` ahead.
          */
         applyTo(view: Camera, world: Mat4, focusDistance?: number): Camera;
     }
@@ -964,7 +964,7 @@ declare module "messier/engine/sceneFormat" {
     export const SCENE_FORMAT = "messier-scene";
     export const PREFAB_FORMAT = "messier-prefab";
     /** Version of scene and prefab files. Bump it, with a migration, for changes that old readers would misread. */
-    export const SCENE_VERSION = 2;
+    export const SCENE_VERSION = 3;
     /** Calls `fn` for every object of a scene or prefab document: top-level ones, children, objects added to instances. */
     export function forEachObject(doc: Json, fn: (obj: Json) => void): void;
     /**
@@ -1871,8 +1871,10 @@ declare module "messier/engine/scene" {
         /** Backdrop and, unless it's a flat color, environment lighting. */
         readonly sky: Sky;
         exposure: number;
-        /** Half extent (world units) of the directional shadow frustum. */
-        shadowExtent: number;
+        /** How far from the camera (world units, along its view) the directional light's shadows reach. */
+        shadowDistance: number;
+        /** Shadow map cascades over that distance (1–4): more keeps near shadows sharper the farther it reaches. */
+        shadowCascades: number;
         readonly physics: PhysicsWorld;
         /** TypeScript behaviour scripts available to this scene's objects (shared with clones). */
         readonly scripts: ScriptLibrary;
@@ -2030,7 +2032,7 @@ declare module "messier/engine/light" {
         innerAngle: number;
         /** Spot: cut-off cone half-angle in degrees. */
         outerAngle: number;
-        /** Directional only: renders a shadow map (the first such light is used). */
+        /** Directional only: renders cascaded shadow maps (the first such light is used; see Scene.shadowDistance). */
         castShadows: boolean;
         constructor(type?: LightType, color?: Vec3, intensity?: number);
         clone(): Light;
@@ -2185,12 +2187,16 @@ declare module "messier/engine/frameGraph" {
         clearValue?: GPUColor;
         /** A single-sample texture the (multisampled) attachment resolves into. */
         resolveTarget?: TextureHandle;
+        /** The array layer drawn into (default 0). Passes writing different layers still count as writing the texture. */
+        layer?: number;
     }
     /** Depth only: the stencil aspect isn't handled yet. */
     export interface DepthAttachment {
         /** Default 'clear'; 'load' also counts as reading the texture. */
         depthLoadOp?: GPULoadOp;
         depthClearValue?: number;
+        /** The array layer drawn into (default 0), as for color attachments. */
+        layer?: number;
     }
     /** Formats and sample count of a render pass's attachments, for choosing pipelines that match them. */
     export interface RenderTarget {
@@ -2281,6 +2287,8 @@ declare module "messier/engine/frameGraph" {
         private alive;
         private lifetimes;
         private renderPassDescriptor;
+        /** A single layer of the texture: an array texture's default view would be all its layers. */
+        private attachmentView;
         private renderTarget;
         private gpuTexture;
         private resolvedSize;
@@ -2379,6 +2387,29 @@ declare module "messier/engine/gpuTimer" {
         submitted(): void;
         destroy(): void;
     }
+}
+declare module "messier/engine/shadows" {
+    import { type Mat4, type Vec3 } from "messier/engine/math";
+    import type { Camera } from "messier/engine/camera";
+    /** Layers of the shadow map: the most cascades a scene can ask for. */
+    export const MAX_SHADOW_CASCADES = 4;
+    export interface ShadowCascade {
+        /** World to the cascade's clip space (normal Z: 0 near the light, 1 far). */
+        viewProj: Mat4;
+        /** View depth (along the camera's forward axis) where the cascade ends. */
+        far: number;
+        /** Radius of the slice's bounding sphere: the box is twice that across. */
+        radius: number;
+        /** Size of one shadow-map texel in world units. */
+        texel: number;
+        /** Depth range of the box (world units), for turning a world-space bias into a depth one. */
+        depthRange: number;
+    }
+    /**
+     * The cascades for `camera`, looking along `lightDir` (the direction the light travels), up to `distance` from the
+     * camera, on a `mapSize` texel square per cascade.
+     */
+    export function computeCascades(camera: Camera, lightDir: Readonly<Vec3>, distance: number, count: number, mapSize: number): ShadowCascade[];
 }
 declare module "messier/engine/pipelines" {
     import { type BlendMode, type Material } from "messier/engine/material";
@@ -2483,7 +2514,7 @@ declare module "messier/engine/renderer" {
         /** Mesh renderers skipped because they're outside the view. */
         culled: number;
         lights: number;
-        /** Mesh instances drawn into the shadow map. */
+        /** Mesh instances drawn into the shadow map, over all its cascades. */
         shadowCasters: number;
         /** Shape2D/Text2D components drawn. */
         elements2D: number;
@@ -2491,7 +2522,7 @@ declare module "messier/engine/renderer" {
         pipelineBuilds: number;
     }
     /**
-     * Forward renderer: a shadow pass (one directional light), a 4x MSAA HDR main pass (lit meshes, the sky), a tonemap
+     * Forward renderer: shadow passes (a cascade each, for one directional light), a 4x MSAA HDR main pass (lit meshes, the sky), a tonemap
      * pass, then the display-space overlay pass (editor grid, 2D, overlay helpers) resolved into the canvas. Each frame
      * declares its passes on a FrameGraph, which orders them and owns their transient textures.
      */
@@ -2503,7 +2534,7 @@ declare module "messier/engine/renderer" {
         width: number;
         height: number;
         readonly stats: RenderStats;
-        /** Skip meshes outside the camera's view (and, in the shadow pass, outside the shadow map). */
+        /** Skip meshes outside the camera's view (and, in the shadow passes, outside their cascade). */
         frustumCulling: boolean;
         private readonly context;
         /** Declares, orders and runs each frame's passes, and owns their transient textures (MSAA color, depth). */
@@ -2540,7 +2571,8 @@ declare module "messier/engine/renderer" {
         private frameSky;
         private readonly shadowSampler;
         private readonly skySampler;
-        private readonly shadowFrameBindGroup;
+        /** One per cascade: its light matrix. */
+        private readonly shadowFrameBindGroups;
         private readonly textureSampler;
         private readonly mipSampler;
         private readonly whiteTextureView;
@@ -2581,7 +2613,6 @@ declare module "messier/engine/renderer" {
          * uploads them with any new glyphs. Returns the vertex counts of the two parts.
          */
         private prepare2D;
-        private computeShadowMatrix;
         /** Renders one frame. World matrices must be up to date (Scene.updateMatrices). */
         render(scene: Scene, camera: Camera, options?: RenderOptions): RenderStats;
         /** The attachments the mesh passes draw into, as the frame graph declares them: what mesh variants are made for. */
